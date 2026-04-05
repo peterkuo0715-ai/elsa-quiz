@@ -1,0 +1,35 @@
+// ============================================================
+// Audit Logs & Idempotency Keys
+// ============================================================
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id])
+  action      String   // e.g. "payout.request", "settlement.batch_run"
+  entityType  String   // e.g. "PayoutRequest", "SettlementBatch"
+  entityId    String
+  oldValue    Json?
+  newValue    Json?
+  reason      String?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId, createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
+
+model IdempotencyKey {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  endpoint  String
+  response  Json?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}

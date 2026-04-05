@@ -1,0 +1,67 @@
+// ============================================================
+// Wallet & Ledger (CORE - Single Source of Truth)
+// ============================================================
+
+model MerchantWallet {
+  id              String   @id @default(cuid())
+  merchantId      String   @unique
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  isFrozen        Boolean  @default(false)
+  payoutSuspended Boolean  @default(false)
+  frozenReason    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  ledgerEntries    WalletLedgerEntry[]
+  balanceSnapshots WalletBalanceSnapshot[]
+
+  @@map("merchant_wallets")
+}
+
+/// Append-only ledger. NEVER update or delete rows.
+/// All wallet balances are derived from summing these entries.
+model WalletLedgerEntry {
+  id              String          @id @default(cuid())
+  walletId        String
+  wallet          MerchantWallet  @relation(fields: [walletId], references: [id])
+  bucket          WalletBucket
+  entryType       LedgerEntryType
+  // Amount: positive = credit, negative = debit
+  amount          Decimal         @db.Decimal(18, 4)
+  amountTaxIncl   Decimal         @db.Decimal(18, 4)
+  amountTaxExcl   Decimal         @db.Decimal(18, 4)
+  taxAmount       Decimal         @db.Decimal(18, 4)
+  // Running balance for this bucket after this entry
+  balanceAfter    Decimal         @db.Decimal(18, 4)
+  // Polymorphic reference to source entity
+  referenceType   ReferenceType?
+  referenceId     String?
+  // Idempotency
+  idempotencyKey  String          @unique
+  description     String?
+  metadata        Json?
+  createdAt       DateTime        @default(now())
+
+  @@index([walletId, bucket, createdAt])
+  @@index([walletId, createdAt])
+  @@index([referenceType, referenceId])
+  @@map("wallet_ledger_entries")
+}
+
+/// Performance cache only. NOT source of truth.
+model WalletBalanceSnapshot {
+  id          String         @id @default(cuid())
+  walletId    String
+  wallet      MerchantWallet @relation(fields: [walletId], references: [id])
+  pending     Decimal        @db.Decimal(18, 4) @default(0)
+  available   Decimal        @db.Decimal(18, 4) @default(0)
+  reserved    Decimal        @db.Decimal(18, 4) @default(0)
+  inTransit   Decimal        @db.Decimal(18, 4) @default(0)
+  isLatest    Boolean        @default(true)
+  snapshotAt  DateTime       @default(now())
+  createdAt   DateTime       @default(now())
+
+  @@index([walletId, isLatest])
+  @@index([walletId, snapshotAt])
+  @@map("wallet_balance_snapshots")
+}

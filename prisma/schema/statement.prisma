@@ -1,0 +1,55 @@
+// ============================================================
+// Monthly Statements
+// ============================================================
+
+model MonthlyStatement {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  year            Int
+  month           Int
+  // Opening / Closing balances
+  openingBalanceTaxIncl  Decimal @db.Decimal(18, 4) @default(0)
+  openingBalanceTaxExcl  Decimal @db.Decimal(18, 4) @default(0)
+  closingBalanceTaxIncl  Decimal @db.Decimal(18, 4) @default(0)
+  closingBalanceTaxExcl  Decimal @db.Decimal(18, 4) @default(0)
+  // Totals
+  totalIncomeTaxIncl     Decimal @db.Decimal(18, 4) @default(0)
+  totalIncomeTaxExcl     Decimal @db.Decimal(18, 4) @default(0)
+  totalDeductionsTaxIncl Decimal @db.Decimal(18, 4) @default(0)
+  totalDeductionsTaxExcl Decimal @db.Decimal(18, 4) @default(0)
+  totalPayoutsTaxIncl    Decimal @db.Decimal(18, 4) @default(0)
+  totalPayoutsTaxExcl    Decimal @db.Decimal(18, 4) @default(0)
+  // Files
+  pdfUrl          String?
+  xlsxUrl         String?
+  generatedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items MonthlyStatementItem[]
+
+  @@unique([merchantId, year, month])
+  @@index([merchantId])
+  @@map("monthly_statements")
+}
+
+model MonthlyStatementItem {
+  id            String           @id @default(cuid())
+  statementId   String
+  statement     MonthlyStatement @relation(fields: [statementId], references: [id])
+  // Line item details
+  date          DateTime
+  description   String
+  entryType     LedgerEntryType
+  referenceType ReferenceType?
+  referenceId   String?
+  amountTaxIncl Decimal          @db.Decimal(18, 4)
+  amountTaxExcl Decimal          @db.Decimal(18, 4)
+  taxAmount     Decimal          @db.Decimal(18, 4)
+  balanceAfterTaxIncl Decimal    @db.Decimal(18, 4)
+  createdAt     DateTime         @default(now())
+
+  @@index([statementId])
+  @@map("monthly_statement_items")
+}

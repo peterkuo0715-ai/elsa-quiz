@@ -1,0 +1,124 @@
+// ============================================================
+// Merchant & Store
+// ============================================================
+
+model Merchant {
+  id          String   @id @default(cuid())
+  name        String
+  taxId       String?  @unique
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users           User[]
+  stores          MerchantStore[]
+  wallet          MerchantWallet?
+  bankAccounts    MerchantBankAccount[]
+  bankChangeReqs  MerchantBankAccountChangeRequest[]
+  riskProfile     MerchantRiskProfile?
+  reserveRules    MerchantReserveRule[]
+  orders          Order[]
+  payoutRequests  PayoutRequest[]
+  disputeCases    DisputeCase[]
+  statements      MonthlyStatement[]
+
+  @@map("merchants")
+}
+
+model MerchantStore {
+  id         String   @id @default(cuid())
+  merchantId String
+  merchant   Merchant @relation(fields: [merchantId], references: [id])
+  name       String
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  orderItems OrderItem[]
+
+  @@index([merchantId])
+  @@map("merchant_stores")
+}
+
+// ============================================================
+// Bank Account
+// ============================================================
+
+model MerchantBankAccount {
+  id            String   @id @default(cuid())
+  merchantId    String
+  merchant      Merchant @relation(fields: [merchantId], references: [id])
+  bankCode      String
+  bankName      String
+  branchCode    String?
+  branchName    String?
+  accountNumber String
+  accountName   String
+  isActive      Boolean  @default(true)
+  effectiveAt   DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  payoutRequests PayoutRequest[]
+
+  @@index([merchantId])
+  @@map("merchant_bank_accounts")
+}
+
+model MerchantBankAccountChangeRequest {
+  id               String                  @id @default(cuid())
+  merchantId       String
+  merchant         Merchant                @relation(fields: [merchantId], references: [id])
+  // New bank account info
+  bankCode         String
+  bankName         String
+  branchCode       String?
+  branchName       String?
+  accountNumber    String
+  accountName      String
+  // Status
+  status           BankAccountChangeStatus @default(PENDING_REVIEW)
+  requestedAt      DateTime                @default(now())
+  reviewedAt       DateTime?
+  reviewedBy       String?
+  effectiveAt      DateTime?
+  rejectionReason  String?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+
+  @@index([merchantId])
+  @@index([status])
+  @@map("merchant_bank_account_change_requests")
+}
+
+// ============================================================
+// Risk & Reserve
+// ============================================================
+
+model MerchantRiskProfile {
+  id         String            @id @default(cuid())
+  merchantId String            @unique
+  merchant   Merchant          @relation(fields: [merchantId], references: [id])
+  riskLevel  MerchantRiskLevel @default(LOW)
+  notes      String?
+  setBy      String?
+  createdAt  DateTime          @default(now())
+  updatedAt  DateTime          @updatedAt
+
+  @@map("merchant_risk_profiles")
+}
+
+model MerchantReserveRule {
+  id              String   @id @default(cuid())
+  merchantId      String
+  merchant        Merchant @relation(fields: [merchantId], references: [id])
+  reservePercent  Decimal  @db.Decimal(5, 4)  // e.g. 0.1000 = 10%
+  holdDays        Int      @default(30)
+  isActive        Boolean  @default(true)
+  createdBy       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([merchantId, isActive])
+  @@map("merchant_reserve_rules")
+}

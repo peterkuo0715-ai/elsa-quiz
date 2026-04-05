@@ -1,0 +1,97 @@
+// ============================================================
+// Payout Requests, Batches & Failures
+// ============================================================
+
+model PayoutRequest {
+  id               String              @id @default(cuid())
+  requestNumber    String              @unique
+  merchantId       String
+  merchant         Merchant            @relation(fields: [merchantId], references: [id])
+  bankAccountId    String
+  bankAccount      MerchantBankAccount @relation(fields: [bankAccountId], references: [id])
+  // Amount
+  amountTaxIncl    Decimal             @db.Decimal(18, 4)
+  amountTaxExcl    Decimal             @db.Decimal(18, 4)
+  taxAmount        Decimal             @db.Decimal(18, 4)
+  // Status
+  status           PayoutRequestStatus @default(REQUESTED)
+  // Bank info snapshot (frozen at request time)
+  bankCodeSnapshot      String
+  bankNameSnapshot      String
+  branchCodeSnapshot    String?
+  accountNumberSnapshot String
+  accountNameSnapshot   String
+  // Timestamps
+  requestedAt      DateTime            @default(now())
+  processedAt      DateTime?
+  completedAt      DateTime?
+  failedAt         DateTime?
+  // Audit
+  requestedBy      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  batchItems    PayoutBatchItem[]
+  failures      PayoutFailure[]
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([requestedAt])
+  @@map("payout_requests")
+}
+
+model PayoutBatch {
+  id            String           @id @default(cuid())
+  batchNumber   String           @unique
+  status        PayoutBatchStatus @default(CREATED)
+  totalItems    Int              @default(0)
+  totalAmount   Decimal          @db.Decimal(18, 4) @default(0)
+  successCount  Int              @default(0)
+  failedCount   Int              @default(0)
+  // Processing
+  exportedAt    DateTime?
+  processedAt   DateTime?
+  completedAt   DateTime?
+  createdBy     String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  items PayoutBatchItem[]
+
+  @@index([status])
+  @@map("payout_batches")
+}
+
+model PayoutBatchItem {
+  id              String        @id @default(cuid())
+  batchId         String
+  batch           PayoutBatch   @relation(fields: [batchId], references: [id])
+  payoutRequestId String
+  payoutRequest   PayoutRequest @relation(fields: [payoutRequestId], references: [id])
+  // Result
+  isSuccess       Boolean?
+  bankReference   String?
+  failureReason   String?
+  processedAt     DateTime?
+  createdAt       DateTime      @default(now())
+
+  @@index([batchId])
+  @@index([payoutRequestId])
+  @@map("payout_batch_items")
+}
+
+model PayoutFailure {
+  id              String        @id @default(cuid())
+  payoutRequestId String
+  payoutRequest   PayoutRequest @relation(fields: [payoutRequestId], references: [id])
+  failureReason   String
+  bankErrorCode   String?
+  occurredAt      DateTime      @default(now())
+  isResolved      Boolean       @default(false)
+  resolvedAt      DateTime?
+  resolution      String?
+  createdAt       DateTime      @default(now())
+
+  @@index([payoutRequestId])
+  @@map("payout_failures")
+}

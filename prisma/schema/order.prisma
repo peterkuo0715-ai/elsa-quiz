@@ -1,0 +1,91 @@
+// ============================================================
+// Orders, Order Items & Shipments
+// ============================================================
+
+model Order {
+  id              String    @id @default(cuid())
+  orderNumber     String    @unique
+  merchantId      String
+  merchant        Merchant  @relation(fields: [merchantId], references: [id])
+  // Consumer info (minimal)
+  customerName    String?
+  customerEmail   String?
+  // Amounts (tax-inclusive / exclusive / tax)
+  totalAmountTaxIncl  Decimal @db.Decimal(18, 4)
+  totalAmountTaxExcl  Decimal @db.Decimal(18, 4)
+  totalTaxAmount      Decimal @db.Decimal(18, 4)
+  // Shipping
+  shippingFeeTaxIncl  Decimal @db.Decimal(18, 4) @default(0)
+  shippingFeeTaxExcl  Decimal @db.Decimal(18, 4) @default(0)
+  shippingTaxAmount   Decimal @db.Decimal(18, 4) @default(0)
+  // Payment
+  paymentMethod   String?
+  paymentFee      Decimal   @db.Decimal(18, 4) @default(0)
+  paidAt          DateTime?
+  // Timestamps
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  items     OrderItem[]
+  shipments Shipment[]
+  refunds   Refund[]
+
+  @@index([merchantId])
+  @@index([paidAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id                     String        @id @default(cuid())
+  orderId                String
+  order                  Order         @relation(fields: [orderId], references: [id])
+  storeId                String?
+  store                  MerchantStore? @relation(fields: [storeId], references: [id])
+  // Product info snapshot
+  productName            String
+  sku                    String?
+  quantity               Int           @default(1)
+  // Pricing
+  unitPriceTaxIncl       Decimal       @db.Decimal(18, 4)
+  unitPriceTaxExcl       Decimal       @db.Decimal(18, 4)
+  unitTaxAmount          Decimal       @db.Decimal(18, 4)
+  subtotalTaxIncl        Decimal       @db.Decimal(18, 4)
+  subtotalTaxExcl        Decimal       @db.Decimal(18, 4)
+  subtotalTaxAmount      Decimal       @db.Decimal(18, 4)
+  // Discount (after discount = basis for commission)
+  discountAmount         Decimal       @db.Decimal(18, 4) @default(0)
+  discountedPriceTaxIncl Decimal       @db.Decimal(18, 4)
+  discountedPriceTaxExcl Decimal       @db.Decimal(18, 4)
+  // Platform commission (calculated on discounted price excl tax)
+  platformCommissionRate Decimal       @db.Decimal(5, 4) @default(0)
+  platformCommission     Decimal       @db.Decimal(18, 4) @default(0)
+  // Campaign
+  campaignId             String?
+  campaignDiscount       Decimal       @db.Decimal(18, 4) @default(0)
+  // Timestamps
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+
+  settlementItem SettlementItem?
+  refundItems    RefundItem[]
+
+  @@index([orderId])
+  @@index([storeId])
+  @@map("order_items")
+}
+
+model Shipment {
+  id          String    @id @default(cuid())
+  orderId     String
+  order       Order     @relation(fields: [orderId], references: [id])
+  trackingNo  String?
+  carrier     String?
+  shippedAt   DateTime?
+  deliveredAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([deliveredAt])
+  @@map("shipments")
+}

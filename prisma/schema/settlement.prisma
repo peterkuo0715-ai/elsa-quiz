@@ -1,0 +1,94 @@
+// ============================================================
+// Settlement Items & Batches
+// ============================================================
+
+model SettlementItem {
+  id                     String               @id @default(cuid())
+  orderItemId            String               @unique
+  orderItem              OrderItem            @relation(fields: [orderItemId], references: [id])
+  merchantId             String
+  batchId                String?
+  batch                  SettlementBatch?     @relation(fields: [batchId], references: [id])
+  // Status
+  status                 SettlementItemStatus @default(PENDING_PAYMENT)
+  // Snapshot amounts at settlement time
+  itemAmountTaxIncl      Decimal              @db.Decimal(18, 4)
+  itemAmountTaxExcl      Decimal              @db.Decimal(18, 4)
+  itemTaxAmount          Decimal              @db.Decimal(18, 4)
+  shippingFeeTaxIncl     Decimal              @db.Decimal(18, 4) @default(0)
+  shippingFeeTaxExcl     Decimal              @db.Decimal(18, 4) @default(0)
+  shippingTaxAmount      Decimal              @db.Decimal(18, 4) @default(0)
+  discountAmount         Decimal              @db.Decimal(18, 4) @default(0)
+  commissionAmount       Decimal              @db.Decimal(18, 4) @default(0)
+  commissionRate         Decimal              @db.Decimal(5, 4)  @default(0)
+  campaignCost           Decimal              @db.Decimal(18, 4) @default(0)
+  paymentFeeShare        Decimal              @db.Decimal(18, 4) @default(0)
+  reserveAmount          Decimal              @db.Decimal(18, 4) @default(0)
+  // Net amount to merchant
+  netAmountTaxIncl       Decimal              @db.Decimal(18, 4)
+  netAmountTaxExcl       Decimal              @db.Decimal(18, 4)
+  netTaxAmount           Decimal              @db.Decimal(18, 4)
+  // Timeline
+  paidAt                 DateTime?
+  shippedAt              DateTime?
+  deliveredAt            DateTime?
+  appreciationEndsAt     DateTime?
+  settledAt              DateTime?
+  // Timestamps
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+
+  @@index([merchantId])
+  @@index([status, appreciationEndsAt])
+  @@index([batchId])
+  @@map("settlement_items")
+}
+
+model SettlementBatch {
+  id             String               @id @default(cuid())
+  batchNumber    String               @unique
+  status         SettlementBatchStatus @default(PENDING)
+  totalItems     Int                  @default(0)
+  totalAmount    Decimal              @db.Decimal(18, 4) @default(0)
+  successCount   Int                  @default(0)
+  failedCount    Int                  @default(0)
+  triggeredBy    String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorMessage   String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  items SettlementItem[]
+
+  @@index([status])
+  @@map("settlement_batches")
+}
+
+// ============================================================
+// Manual Adjustments
+// ============================================================
+
+model SettlementAdjustment {
+  id              String         @id @default(cuid())
+  merchantId      String
+  adjustmentType  AdjustmentType
+  // Amount (positive = credit to merchant, negative = debit)
+  amountTaxIncl   Decimal        @db.Decimal(18, 4)
+  amountTaxExcl   Decimal        @db.Decimal(18, 4)
+  taxAmount       Decimal        @db.Decimal(18, 4)
+  reason          String
+  // Reference
+  referenceOrderId String?
+  referenceItemId  String?
+  // Approval
+  createdBy       String
+  approvedBy      String?
+  approvedAt      DateTime?
+  // Timestamps
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([merchantId])
+  @@map("settlement_adjustments")
+}

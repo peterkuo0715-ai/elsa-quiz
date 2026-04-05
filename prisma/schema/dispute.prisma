@@ -1,0 +1,69 @@
+// ============================================================
+// Dispute Cases, Evidences & Freezes
+// ============================================================
+
+model DisputeCase {
+  id              String        @id @default(cuid())
+  caseNumber      String        @unique
+  merchantId      String
+  merchant        Merchant      @relation(fields: [merchantId], references: [id])
+  orderId         String?
+  orderItemId     String?
+  // Dispute details
+  status          DisputeStatus @default(OPENED)
+  disputeReason   String
+  disputeAmountTaxIncl Decimal  @db.Decimal(18, 4)
+  disputeAmountTaxExcl Decimal  @db.Decimal(18, 4)
+  disputeTaxAmount     Decimal  @db.Decimal(18, 4)
+  // Resolution
+  resolution      String?
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  // Assignment
+  assignedTo      String?
+  // Timestamps
+  openedAt        DateTime      @default(now())
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  evidences DisputeEvidence[]
+  freezes   DisputeFreeze[]
+
+  @@index([merchantId])
+  @@index([status])
+  @@index([orderId])
+  @@map("dispute_cases")
+}
+
+model DisputeEvidence {
+  id          String      @id @default(cuid())
+  disputeId   String
+  dispute     DisputeCase @relation(fields: [disputeId], references: [id])
+  submittedBy String
+  fileUrl     String?
+  description String?
+  createdAt   DateTime    @default(now())
+
+  @@index([disputeId])
+  @@map("dispute_evidences")
+}
+
+model DisputeFreeze {
+  id              String      @id @default(cuid())
+  disputeId       String
+  dispute         DisputeCase @relation(fields: [disputeId], references: [id])
+  walletId        String
+  // Only freeze the disputed amount, NOT entire order
+  frozenAmountTaxIncl Decimal @db.Decimal(18, 4)
+  frozenAmountTaxExcl Decimal @db.Decimal(18, 4)
+  frozenTaxAmount     Decimal @db.Decimal(18, 4)
+  isFrozen        Boolean     @default(true)
+  frozenAt        DateTime    @default(now())
+  unfrozenAt      DateTime?
+  unfrozenReason  String?
+  createdAt       DateTime    @default(now())
+
+  @@index([disputeId])
+  @@index([walletId, isFrozen])
+  @@map("dispute_freezes")
+}
