@@ -2,128 +2,272 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, RotateCcw, CheckCircle, XCircle, Loader2 } from "lucide-react";
+import { ArrowLeft, RotateCcw, ChevronDown, ChevronRight, CheckCircle, XCircle, Loader2, Wallet, Coins, Store } from "lucide-react";
 
-interface Scenario { id: string; title: string; description: string; details: string[]; color: string; category: string; }
+interface ConsumerAccount { cash: number; hiCoin: number; }
+interface OrderState { orderId: string; orderNumber: string; type: "cash" | "hicoin"; settled: boolean; executedL3: Set<string>; }
 
-const SCENARIOS: Scenario[] = [
-  // 結算
-  { id: "pending_appreciation", title: "0. 鑑賞期中（未結算）", description: "已到貨但 7 天未過，款項在 Pending", details: ["無線充電盤 NT$1,800", "含金流費 2.8% + 運費 NT$60", "Pending 中，不可提領"], color: "border-yellow-300 hover:border-yellow-500", category: "結算" },
-  { id: "normal_settlement", title: "1. 正常結算（全費用拆解）", description: "含金流費+運費+抽成完整拆解", details: ["藍芽耳機 NT$1,500 + 運費 NT$80", "抽成 10% + 金流費 2.8%", "公式: 商品+運費-抽成-金流費=淨額"], color: "border-green-300 hover:border-green-500", category: "結算" },
-  { id: "multi_merchant", title: "2. 多商家訂單拆分", description: "商家A+B 各自獨立結算", details: ["商家A: 滑鼠 NT$800 (10%)", "商家B: 鍵盤 NT$2,500 (12%)", "各自獨立拆帳"], color: "border-blue-300 hover:border-blue-500", category: "結算" },
-  // 嗨幣
-  { id: "hi_coin_platform", title: "3. 嗨幣（平台補貼 Mode A）", description: "嗨幣折抵由平台吸收，商家收全額", details: ["藍芽音箱 NT$1,900", "消費者: 1,700台幣 + 200嗨幣", "平台補貼 200 給商家", "抽成依原價 1,900 計算"], color: "border-amber-300 hover:border-amber-500", category: "嗨幣" },
-  { id: "hi_coin_merchant", title: "4. 嗨幣（商家活動 Mode B）", description: "嗨幣活動成本由商家負擔", details: ["智慧手錶 NT$3,000", "嗨幣折抵 500（商家承擔）", "從商家淨額扣除嗨幣活動成本"], color: "border-amber-400 hover:border-amber-600", category: "嗨幣" },
-  // 費用
-  { id: "merchant_campaign", title: "5. 商家活動成本", description: "商家參加平台活動，成本自行吸收", details: ["運動耳機 NT$1,200", "活動折扣 NT$150 由商家承擔", "從商家淨額中扣除"], color: "border-orange-300 hover:border-orange-500", category: "費用" },
-  { id: "full_breakdown", title: "6. 複合訂單（全拆解展示）", description: "含所有費用類型的完整訂單", details: ["降噪耳機 NT$5,000 + 運費100", "抽成12% + 金流費2.8%", "嗨幣300(平台補貼) + 活動成本200", "展示完整公式拆解"], color: "border-indigo-300 hover:border-indigo-500", category: "費用" },
-  // 退款
-  { id: "partial_refund", title: "7. 部分退款", description: "兩件商品退一件，抽成按比例退", details: ["充電線A NT$300 + B NT$500", "退充電線A", "抽成退、金流費不退"], color: "border-orange-300 hover:border-orange-500", category: "退款" },
-  { id: "full_refund", title: "8. 全額退款", description: "全額退款，抽成退金流費不退", details: ["螢幕保護貼 NT$600", "全額退款", "抽成退還、金流費不退"], color: "border-red-300 hover:border-red-500", category: "退款" },
-  { id: "hi_coin_refund", title: "9. 嗨幣退款（原路返回）", description: "台幣退台幣、嗨幣退嗨幣", details: ["需先執行嗨幣場景", "退消費者台幣+嗨幣", "平台收回嗨幣補貼"], color: "border-amber-400 hover:border-amber-600", category: "退款" },
-  // 爭議
-  { id: "dispute_freeze", title: "10. 爭議凍結", description: "僅凍結爭議金額，非全單", details: ["行動電源 NT$1,200", "爭議 NT$500", "僅凍結 500"], color: "border-purple-300 hover:border-purple-500", category: "爭議" },
-  { id: "dispute_resolve", title: "11. 爭議解除（商家勝）", description: "凍結金額退回 Available", details: ["需先執行爭議凍結", "商家勝訴", "解凍回可用"], color: "border-green-300 hover:border-green-500", category: "爭議" },
-  { id: "dispute_reject", title: "12. 爭議扣回（商家敗）", description: "凍結金額永久扣除", details: ["自動建爭議+凍結", "商家敗訴", "永久扣回"], color: "border-red-300 hover:border-red-500", category: "爭議" },
-  // 提領
-  { id: "payout_success", title: "13. 提領成功", description: "申請→銀行成功", details: ["先結算一筆", "申請提領", "銀行成功"], color: "border-green-300 hover:border-green-500", category: "提領" },
-  { id: "payout_failure", title: "14. 提領失敗退回", description: "失敗自動退回 wallet", details: ["先結算一筆", "申請提領", "失敗→退回"], color: "border-red-300 hover:border-red-500", category: "提領" },
-  { id: "negative_balance", title: "15. 已提領後退款（負餘額）", description: "提領後退款，暫停提領", details: ["藍芽喇叭 NT$2,000", "提領後退款", "負餘額+暫停"], color: "border-red-400 hover:border-red-600", category: "提領" },
-  // 其他
-  { id: "reserve_release", title: "16. Reserve Hold/Release", description: "商家B Reserve 扣留後釋放", details: ["商家B 中風險", "結算扣 Reserve", "手動釋放"], color: "border-blue-300 hover:border-blue-500", category: "其他" },
-  { id: "manual_adjustment", title: "17. 手動調整", description: "補發 +500 / 扣回 -200", details: ["Credit + Debit", "淨增 NT$300"], color: "border-indigo-300 hover:border-indigo-500", category: "其他" },
-  { id: "bank_change", title: "18. 銀行帳號變更", description: "申請→審核→生效", details: ["申請", "審核", "生效"], color: "border-yellow-300 hover:border-yellow-500", category: "其他" },
-  { id: "monthly_statement", title: "19. 月度對帳單", description: "產生當月正式對帳單", details: ["彙總 ledger", "期初/期末餘額", "可下載 XLSX"], color: "border-teal-300 hover:border-teal-500", category: "其他" },
-  { id: "idempotency_test", title: "20. Webhook 冪等", description: "同一筆付款送兩次不重複", details: ["同 idempotencyKey", "驗證冪等性"], color: "border-gray-300 hover:border-gray-500", category: "其他" },
+const L2_ITEMS = [
+  { id: "pending", label: "鑑賞期中（未結算）", icon: "⏳" },
+  { id: "settled", label: "正常完成（鑑賞期後結算）", icon: "✅" },
+  { id: "problem", label: "鑑賞期後有問題", icon: "⚠️" },
 ];
 
-const CATEGORIES = ["結算", "嗨幣", "費用", "退款", "爭議", "提領", "其他"];
-type CardState = "idle" | "loading" | "success" | "error";
+const L3_MAP: Record<string, Array<{ id: string; label: string; desc: string }>> = {
+  pending: [
+    { id: "show_pending", label: "查看狀態", desc: "款項在 Pending 中，不可提領" },
+    { id: "refund_in_appreciation", label: "鑑賞期內退款", desc: "尚未結算就全額退款" },
+  ],
+  settled: [
+    { id: "payout_success", label: "商家提領成功", desc: "全額提領 → 銀行匯款成功" },
+    { id: "payout_failure", label: "商家提領失敗", desc: "提領失敗 → 自動退回 wallet" },
+    { id: "reserve_release", label: "Reserve 釋放", desc: "扣留的保留金釋放回可用" },
+  ],
+  problem: [
+    { id: "partial_refund", label: "部分退貨（退1件）", desc: "退第一件商品，第二件保留" },
+    { id: "full_refund", label: "全額退款", desc: "全部退款（嗨幣原路返回）" },
+    { id: "dispute_resolve", label: "爭議 → 凍結 → 解除", desc: "凍結500 → 商家勝訴 → 解凍" },
+    { id: "dispute_debit", label: "爭議 → 凍結 → 扣回", desc: "凍結500 → 商家敗訴 → 永久扣回" },
+    { id: "negotiated_refund", label: "協商退款（退NT$1,000）", desc: "協商只退部分金額，非整件退" },
+    { id: "negative_balance_refund", label: "已提領後退款（負餘額）", desc: "先提領再退款 → 負餘額暫停提領" },
+    { id: "manual_adjustment", label: "手動調整單", desc: "補發+300 / 扣回-100" },
+  ],
+};
+
+const INITIAL_CONSUMER: ConsumerAccount = { cash: 50000, hiCoin: 1000 };
 
 export default function SimulatorPage() {
-  const [states, setStates] = useState<Record<string, CardState>>({});
+  const [consumer, setConsumer] = useState<ConsumerAccount>({ ...INITIAL_CONSUMER });
+  const [orders, setOrders] = useState<OrderState[]>([]);
+  const [expandedOrder, setExpandedOrder] = useState<number | null>(null);
+  const [expandedL2, setExpandedL2] = useState<string | null>(null);
+  const [loading, setLoading] = useState<string | null>(null);
   const [messages, setMessages] = useState<Record<string, string>>({});
   const [resetting, setResetting] = useState(false);
 
-  async function run(id: string) {
-    setStates((s) => ({ ...s, [id]: "loading" }));
-    setMessages((m) => ({ ...m, [id]: "" }));
-    try {
-      const res = await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario: id }) });
-      const data = await res.json();
-      setStates((s) => ({ ...s, [id]: data.success ? "success" : "error" }));
-      setMessages((m) => ({ ...m, [id]: data.message || "失敗" }));
-    } catch {
-      setStates((s) => ({ ...s, [id]: "error" }));
-      setMessages((m) => ({ ...m, [id]: "網路錯誤" }));
+  async function api(body: Record<string, unknown>) {
+    const res = await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    return res.json();
+  }
+
+  async function handleCreateOrder(type: "cash" | "hicoin") {
+    const key = `create-${type}`;
+    setLoading(key);
+    const data = await api({ action: "create_order", type });
+    setLoading(null);
+    if (data.success) {
+      const debit = data.consumerDebit;
+      setConsumer((c) => ({ cash: c.cash - Number(debit.cash), hiCoin: c.hiCoin - Number(debit.hiCoin) }));
+      const newOrder: OrderState = { orderId: data.orderId, orderNumber: data.orderNumber, type, settled: false, executedL3: new Set() };
+      setOrders((prev) => [...prev, newOrder]);
+      setExpandedOrder(orders.length);
+      setMessages((m) => ({ ...m, [data.orderId]: `已建立: ${data.items}\n消費者付: 台幣${debit.cash} + 嗨幣${debit.hiCoin}` }));
+    } else {
+      setMessages((m) => ({ ...m, [key]: data.message }));
     }
+  }
+
+  async function handleL2(orderIdx: number, l2Id: string) {
+    const order = orders[orderIdx];
+    if (l2Id === "settled" && !order.settled) {
+      setLoading(`${order.orderId}-settle`);
+      const data = await api({ action: "settle", orderId: order.orderId });
+      setLoading(null);
+      if (data.success) {
+        setOrders((prev) => prev.map((o, i) => i === orderIdx ? { ...o, settled: true } : o));
+        setMessages((m) => ({ ...m, [`${order.orderId}-settled`]: data.message }));
+      }
+    }
+    if (l2Id === "problem" && !order.settled) {
+      // Auto-settle first
+      setLoading(`${order.orderId}-settle`);
+      const data = await api({ action: "settle", orderId: order.orderId });
+      setLoading(null);
+      if (data.success) {
+        setOrders((prev) => prev.map((o, i) => i === orderIdx ? { ...o, settled: true } : o));
+      }
+    }
+    setExpandedL2(expandedL2 === `${orderIdx}-${l2Id}` ? null : `${orderIdx}-${l2Id}`);
+  }
+
+  async function handleL3(orderIdx: number, actionId: string) {
+    const order = orders[orderIdx];
+    if (actionId === "show_pending") {
+      setMessages((m) => ({ ...m, [`${order.orderId}-show_pending`]: "款項在 Pending bucket，鑑賞期 7 天後才會轉入 Available。目前不可提領。" }));
+      return;
+    }
+    const key = `${order.orderId}-${actionId}`;
+    setLoading(key);
+    const data = await api({ action: actionId, orderId: order.orderId });
+    setLoading(null);
+    if (data.success) {
+      setOrders((prev) => prev.map((o, i) => i === orderIdx ? { ...o, executedL3: new Set([...o.executedL3, actionId]) } : o));
+      if (data.consumerRefund) {
+        setConsumer((c) => ({ cash: c.cash + Number(data.consumerRefund.cash), hiCoin: c.hiCoin + Number(data.consumerRefund.hiCoin) }));
+      }
+    }
+    setMessages((m) => ({ ...m, [key]: data.message || data.error || "失敗" }));
   }
 
   async function handleReset() {
     if (!confirm("確定清除所有模擬資料？")) return;
     setResetting(true);
-    try {
-      const res = await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scenario: "reset" }) });
-      const data = await res.json();
-      if (data.success) { setStates({}); setMessages({}); alert(data.message); }
-    } catch { alert("重置失敗"); }
+    await api({ action: "reset" });
+    setConsumer({ ...INITIAL_CONSUMER });
+    setOrders([]);
+    setExpandedOrder(null);
+    setExpandedL2(null);
+    setMessages({});
     setResetting(false);
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-8 flex items-center justify-between">
+    <div className="min-h-screen bg-gray-50">
+      {/* Top bar: Consumer Account */}
+      <div className="sticky top-0 z-10 border-b bg-white shadow-sm">
+        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-3">
           <div className="flex items-center gap-4">
-            <Link href="/login" className="rounded-md border bg-white px-3 py-2 text-sm hover:bg-gray-50">
-              <ArrowLeft className="inline h-4 w-4 mr-1" />返回
-            </Link>
-            <div>
-              <h1 className="text-2xl font-bold">POC 場景模擬器 <span className="text-sm font-normal text-gray-400">PRD v1.1</span></h1>
-              <p className="text-sm text-gray-500">21 個場景，覆蓋 PRD v1.1 全部 17 項驗收標準</p>
-            </div>
+            <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700"><ArrowLeft className="inline h-4 w-4" /> 返回</Link>
+            <h1 className="text-lg font-bold">POC 場景模擬器 v2</h1>
           </div>
-          <button onClick={handleReset} disabled={resetting} className="flex items-center gap-2 rounded-md border-2 border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50">
-            <RotateCcw className={`h-4 w-4 ${resetting ? "animate-spin" : ""}`} />
-            {resetting ? "重置中..." : "清除全部資料"}
-          </button>
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2">
+              <Wallet className="h-4 w-4 text-blue-600" />
+              <span className="text-sm font-medium">消費者</span>
+              <span className="font-mono text-sm">台幣 <strong className="text-blue-700">{consumer.cash.toLocaleString()}</strong></span>
+              <span className="text-gray-300">|</span>
+              <Coins className="h-4 w-4 text-amber-500" />
+              <span className="font-mono text-sm">嗨幣 <strong className="text-amber-600">{consumer.hiCoin.toLocaleString()}</strong></span>
+            </div>
+            <button onClick={handleReset} disabled={resetting} className="flex items-center gap-1 rounded border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
+              <RotateCcw className={`h-3 w-3 ${resetting ? "animate-spin" : ""}`} /> 重置
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="mx-auto max-w-5xl px-6 py-6 space-y-6">
+        {/* L1: Payment buttons */}
+        <div>
+          <h2 className="mb-3 text-sm font-semibold text-gray-400 uppercase">第一步：選擇付款方式（建立訂單）</h2>
+          <div className="grid gap-4 md:grid-cols-2">
+            <button onClick={() => handleCreateOrder("cash")} disabled={loading !== null}
+              className="rounded-xl border-2 border-green-200 bg-white p-5 text-left transition hover:border-green-400 hover:shadow disabled:opacity-50">
+              {loading === "create-cash" ? <Loader2 className="h-5 w-5 animate-spin text-green-500 mb-2" /> : <Wallet className="h-6 w-6 text-green-600 mb-2" />}
+              <h3 className="font-semibold">A. 純台幣付款</h3>
+              <p className="mt-1 text-sm text-gray-500">藍芽耳機 NT$1,500 + 保護殼 NT$500 + 運費80</p>
+              <p className="text-xs text-gray-400 mt-1">抽成10% + 金流費2.8%</p>
+            </button>
+            <button onClick={() => handleCreateOrder("hicoin")} disabled={loading !== null}
+              className="rounded-xl border-2 border-amber-200 bg-white p-5 text-left transition hover:border-amber-400 hover:shadow disabled:opacity-50">
+              {loading === "create-hicoin" ? <Loader2 className="h-5 w-5 animate-spin text-amber-500 mb-2" /> : <Coins className="h-6 w-6 text-amber-600 mb-2" />}
+              <h3 className="font-semibold">B. 台幣 + 嗨幣付款</h3>
+              <p className="mt-1 text-sm text-gray-500">藍芽音箱 NT$1,900 + 底座 NT$600 + 運費80</p>
+              <p className="text-xs text-gray-400 mt-1">嗨幣折抵各200 (平台補貼) + 抽成10% + 金流費2.8%</p>
+            </button>
+          </div>
         </div>
 
-        {CATEGORIES.map((cat) => {
-          const items = SCENARIOS.filter((s) => s.category === cat);
-          if (!items.length) return null;
-          return (
-            <div key={cat} className="mb-6">
-              <h2 className="mb-3 text-sm font-semibold text-gray-400 uppercase tracking-wider">{cat}</h2>
-              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {items.map((sc) => {
-                  const st = states[sc.id] || "idle";
-                  const msg = messages[sc.id];
+        {/* Orders (L2 + L3) */}
+        {orders.map((order, orderIdx) => (
+          <div key={order.orderId} className="rounded-xl border bg-white overflow-hidden">
+            {/* Order header */}
+            <button onClick={() => setExpandedOrder(expandedOrder === orderIdx ? null : orderIdx)}
+              className="flex w-full items-center justify-between p-4 text-left hover:bg-gray-50">
+              <div className="flex items-center gap-3">
+                {order.type === "cash" ? <Wallet className="h-5 w-5 text-green-600" /> : <Coins className="h-5 w-5 text-amber-600" />}
+                <div>
+                  <span className="font-semibold text-sm">{order.orderNumber}</span>
+                  <span className="ml-2 text-xs text-gray-400">{order.type === "cash" ? "純台幣" : "台幣+嗨幣"}</span>
+                  {order.settled && <span className="ml-2 text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">已結算</span>}
+                </div>
+              </div>
+              {expandedOrder === orderIdx ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+            </button>
+
+            {/* Order creation message */}
+            {messages[order.orderId] && (
+              <div className="mx-4 mb-2 rounded bg-blue-50 p-2 text-xs text-blue-800 whitespace-pre-wrap">{messages[order.orderId]}</div>
+            )}
+
+            {/* L2 + L3 */}
+            {expandedOrder === orderIdx && (
+              <div className="border-t px-4 pb-4 pt-2 space-y-2">
+                {L2_ITEMS.map((l2) => {
+                  const l2Key = `${orderIdx}-${l2.id}`;
+                  const isExpanded = expandedL2 === l2Key;
+                  const l3Items = L3_MAP[l2.id] || [];
+
                   return (
-                    <button key={sc.id} onClick={() => run(sc.id)} disabled={st === "loading"}
-                      className={`relative rounded-xl border-2 bg-white p-5 text-left transition-all hover:shadow-md disabled:cursor-wait ${sc.color} ${st === "success" ? "border-green-500 bg-green-50" : ""} ${st === "error" ? "border-red-500 bg-red-50" : ""}`}>
-                      <div className="absolute right-3 top-3">
-                        {st === "loading" && <Loader2 className="h-5 w-5 animate-spin text-blue-500" />}
-                        {st === "success" && <CheckCircle className="h-5 w-5 text-green-500" />}
-                        {st === "error" && <XCircle className="h-5 w-5 text-red-500" />}
-                      </div>
-                      <h3 className="font-semibold pr-8">{sc.title}</h3>
-                      <p className="mt-1 text-sm text-gray-600">{sc.description}</p>
-                      <ul className="mt-3 space-y-1">
-                        {sc.details.map((d, i) => (
-                          <li key={i} className="text-xs text-gray-400 flex items-start gap-1"><span className="mt-0.5">{"•"}</span><span>{d}</span></li>
-                        ))}
-                      </ul>
-                      {msg && (
-                        <div className={`mt-3 rounded-md p-2 text-xs whitespace-pre-wrap ${st === "success" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{msg}</div>
+                    <div key={l2.id} className="rounded-lg border">
+                      <button onClick={() => handleL2(orderIdx, l2.id)}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left hover:bg-gray-50">
+                        <span className="text-sm">
+                          <span className="mr-2">{l2.icon}</span>
+                          <span className="font-medium">{l2.label}</span>
+                          {l2.id === "settled" && !order.settled && <span className="ml-2 text-xs text-gray-400">(點擊執行結算)</span>}
+                        </span>
+                        {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                      </button>
+
+                      {messages[`${order.orderId}-settled`] && l2.id === "settled" && (
+                        <div className="mx-4 mb-2 rounded bg-green-50 p-2 text-xs text-green-800">{messages[`${order.orderId}-settled`]}</div>
                       )}
-                    </button>
+
+                      {isExpanded && (
+                        <div className="border-t px-4 pb-3 pt-2 space-y-2">
+                          {l3Items.map((l3) => {
+                            const executed = order.executedL3.has(l3.id);
+                            const msgKey = `${order.orderId}-${l3.id}`;
+                            const isLoading = loading === msgKey;
+                            const msg = messages[msgKey];
+
+                            // Check if action should be disabled (mutual exclusion)
+                            const refundActions = ["partial_refund", "full_refund", "negotiated_refund", "refund_in_appreciation", "negative_balance_refund"];
+                            const hasRefund = refundActions.some((a) => order.executedL3.has(a));
+                            const isRefund = refundActions.includes(l3.id);
+                            const disabled = executed || isLoading || (isRefund && hasRefund && !executed);
+
+                            return (
+                              <div key={l3.id}>
+                                <button onClick={() => handleL3(orderIdx, l3.id)} disabled={disabled}
+                                  className={`flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition ${
+                                    executed ? "bg-gray-50 text-gray-400 border-gray-200" :
+                                    disabled ? "bg-gray-50 text-gray-300 cursor-not-allowed" :
+                                    "hover:bg-blue-50 hover:border-blue-300"
+                                  }`}>
+                                  <div>
+                                    <span className="font-medium">{l3.label}</span>
+                                    <span className="ml-2 text-xs text-gray-400">{l3.desc}</span>
+                                  </div>
+                                  <div className="shrink-0 ml-2">
+                                    {isLoading && <Loader2 className="h-4 w-4 animate-spin text-blue-500" />}
+                                    {executed && <CheckCircle className="h-4 w-4 text-green-500" />}
+                                  </div>
+                                </button>
+                                {msg && (
+                                  <div className={`mt-1 rounded p-2 text-xs whitespace-pre-wrap ${executed || msg.includes("Available") || msg.includes("成功") || msg.includes("完成") || msg.includes("Pending") ? "bg-green-50 text-green-800" : "bg-red-50 text-red-800"}`}>
+                                    {msg}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>
-            </div>
-          );
-        })}
+            )}
+          </div>
+        ))}
+
+        {orders.length === 0 && (
+          <div className="rounded-xl border-2 border-dashed border-gray-200 p-12 text-center text-gray-400">
+            請點擊上方付款方式建立訂單，開始模擬
+          </div>
+        )}
       </div>
     </div>
   );
