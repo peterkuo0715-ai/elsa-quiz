@@ -40,7 +40,7 @@ export const DisputeService = {
     await LedgerService.createEntry(tx, {
       walletId: params.walletId,
       bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.DISPUTE_FREEZE,
+      entryType: LedgerEntryType.DISPUTE_FREEZE_HOLD,
       amount: breakdown.taxIncl.negated(),
       amountTaxIncl: breakdown.taxIncl.negated(),
       amountTaxExcl: breakdown.taxExcl.negated(),
@@ -55,7 +55,7 @@ export const DisputeService = {
     await LedgerService.createEntry(tx, {
       walletId: params.walletId,
       bucket: WalletBucket.RESERVED,
-      entryType: LedgerEntryType.DISPUTE_FREEZE,
+      entryType: LedgerEntryType.DISPUTE_FREEZE_HOLD,
       amount: breakdown.taxIncl,
       amountTaxIncl: breakdown.taxIncl,
       amountTaxExcl: breakdown.taxExcl,
@@ -103,7 +103,7 @@ export const DisputeService = {
     await LedgerService.createEntry(tx, {
       walletId: params.walletId,
       bucket: WalletBucket.RESERVED,
-      entryType: LedgerEntryType.DISPUTE_UNFREEZE,
+      entryType: LedgerEntryType.DISPUTE_FREEZE_RELEASE,
       amount: breakdown.taxIncl.negated(),
       amountTaxIncl: breakdown.taxIncl.negated(),
       amountTaxExcl: breakdown.taxExcl.negated(),
@@ -118,7 +118,7 @@ export const DisputeService = {
     await LedgerService.createEntry(tx, {
       walletId: params.walletId,
       bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.DISPUTE_UNFREEZE,
+      entryType: LedgerEntryType.DISPUTE_FREEZE_RELEASE,
       amount: breakdown.taxIncl,
       amountTaxIncl: breakdown.taxIncl,
       amountTaxExcl: breakdown.taxExcl,

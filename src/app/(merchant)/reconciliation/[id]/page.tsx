@@ -78,8 +78,8 @@ export default async function ReconciliationDetailPage({
               label="商品金額"
               value={
                 <AmountDisplay
-                  taxIncl={detail.itemAmountTaxIncl.toString()}
-                  taxExcl={detail.itemAmountTaxExcl.toString()}
+                  taxIncl={detail.productAmount.toString()}
+                  taxExcl={detail.taxExcludedAmount.toString()}
                 />
               }
             />
@@ -93,22 +93,35 @@ export default async function ReconciliationDetailPage({
               }
             />
             <Row
-              label="運費（歸商家）"
-              value={
-                <AmountDisplay
-                  taxIncl={detail.shippingFeeTaxIncl.toString()}
-                  taxExcl={detail.shippingFeeTaxExcl.toString()}
-                />
-              }
+              label="運費收入"
+              value={<span className="text-green-600">+{detail.shippingAmount.toString()}</span>}
             />
-            {Number(detail.campaignCost.toString()) > 0 && (
+            <Row
+              label="金流手續費"
+              value={<span className="text-red-600">-{detail.paymentFeeAmount.toString()}</span>}
+            />
+            {Number(detail.promotionCostAmount.toString()) > 0 && (
               <Row
-                label="活動成本"
-                value={
-                  <span className="text-orange-600">
-                    -{detail.campaignCost.toString()}
-                  </span>
-                }
+                label="商家活動成本"
+                value={<span className="text-orange-600">-{detail.promotionCostAmount.toString()}</span>}
+              />
+            )}
+            {Number(detail.hiCoinRedeemedAmount.toString()) > 0 && (
+              <Row
+                label="嗨幣折抵"
+                value={<span className="text-amber-600">{detail.hiCoinRedeemedAmount.toString()}</span>}
+              />
+            )}
+            {Number(detail.hiCoinCampaignCostAmount.toString()) > 0 && (
+              <Row
+                label="嗨幣活動成本"
+                value={<span className="text-orange-600">-{detail.hiCoinCampaignCostAmount.toString()}</span>}
+              />
+            )}
+            {Number(detail.platformSubsidyAmount.toString()) > 0 && (
+              <Row
+                label="平台嗨幣補貼"
+                value={<span className="text-blue-600">+{detail.platformSubsidyAmount.toString()}</span>}
               />
             )}
             {Number(detail.reserveAmount.toString()) > 0 && (
@@ -126,8 +139,8 @@ export default async function ReconciliationDetailPage({
               label="商家淨額"
               value={
                 <AmountDisplay
-                  taxIncl={detail.netAmountTaxIncl.toString()}
-                  taxExcl={detail.netAmountTaxExcl.toString()}
+                  taxIncl={detail.netSettlementAmount.toString()}
+                  taxExcl={detail.taxExcludedAmount.toString()}
                   className="font-bold"
                 />
               }

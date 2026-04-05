@@ -45,12 +45,13 @@ function StatusBadge({ status }: { status: string }) {
 interface ReconciliationItem {
   id: string;
   status: string;
-  itemAmountTaxIncl: { toString(): string };
-  itemAmountTaxExcl: { toString(): string };
+  productAmount: { toString(): string };
   commissionAmount: { toString(): string };
-  netAmountTaxIncl: { toString(): string };
-  netAmountTaxExcl: { toString(): string };
-  reserveAmount: { toString(): string };
+  paymentFeeAmount: { toString(): string };
+  netSettlementAmount: { toString(): string };
+  taxExcludedAmount: { toString(): string };
+  hiCoinRedeemedAmount: { toString(): string };
+  platformSubsidyAmount: { toString(): string };
   paidAt: Date | string | null;
   deliveredAt: Date | string | null;
   appreciationEndsAt: Date | string | null;
@@ -62,7 +63,6 @@ interface ReconciliationItem {
     quantity: number;
     order: {
       orderNumber: string;
-      shippingFeeTaxIncl: { toString(): string };
     };
     store: { name: string } | null;
     refundItems: Array<{
@@ -219,8 +219,8 @@ export function ReconciliationTable({ items, total, page, totalPages }: Props) {
                   </TableCell>
                   <TableCell className="text-right">
                     <AmountDisplay
-                      taxIncl={item.itemAmountTaxIncl.toString()}
-                      taxExcl={item.itemAmountTaxExcl.toString()}
+                      taxIncl={item.productAmount.toString()}
+                      taxExcl={item.taxExcludedAmount.toString()}
                       compact
                     />
                   </TableCell>
@@ -229,8 +229,8 @@ export function ReconciliationTable({ items, total, page, totalPages }: Props) {
                   </TableCell>
                   <TableCell className="text-right">
                     <AmountDisplay
-                      taxIncl={item.netAmountTaxIncl.toString()}
-                      taxExcl={item.netAmountTaxExcl.toString()}
+                      taxIncl={item.netSettlementAmount.toString()}
+                      taxExcl={item.taxExcludedAmount.toString()}
                       compact
                     />
                   </TableCell>

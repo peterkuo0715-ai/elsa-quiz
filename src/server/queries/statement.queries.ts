@@ -58,15 +58,15 @@ export async function generateMonthlyStatement(
   for (const entry of entries) {
     const amount = money(entry.amountTaxIncl.toString());
     if (amount.isPositive()) {
-      if (entry.entryType === "PAYOUT_FAIL_RETURN") {
+      if (entry.entryType === "PAYOUT_FAILED_RETURN") {
         // Payout failure return is not income
       } else {
         totalIncome = totalIncome.plus(amount);
       }
     } else {
       if (
-        entry.entryType === "PAYOUT_RESERVE" ||
-        entry.entryType === "PAYOUT_COMPLETE"
+        entry.entryType === "PAYOUT_REQUESTED" ||
+        entry.entryType === "PAYOUT_SENT"
       ) {
         totalPayouts = totalPayouts.plus(amount.abs());
       } else {

@@ -112,7 +112,7 @@ export const PayoutService = {
     await LedgerService.createEntry(tx, {
       walletId: wallet.id,
       bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.PAYOUT_RESERVE,
+      entryType: LedgerEntryType.PAYOUT_REQUESTED,
       amount: breakdown.taxIncl.negated(),
       amountTaxIncl: breakdown.taxIncl.negated(),
       amountTaxExcl: breakdown.taxExcl.negated(),
@@ -126,7 +126,7 @@ export const PayoutService = {
     await LedgerService.createEntry(tx, {
       walletId: wallet.id,
       bucket: WalletBucket.IN_TRANSIT,
-      entryType: LedgerEntryType.PAYOUT_RESERVE,
+      entryType: LedgerEntryType.PAYOUT_REQUESTED,
       amount: breakdown.taxIncl,
       amountTaxIncl: breakdown.taxIncl,
       amountTaxExcl: breakdown.taxExcl,
@@ -159,7 +159,7 @@ export const PayoutService = {
     await LedgerService.createEntry(tx, {
       walletId: wallet.id,
       bucket: WalletBucket.IN_TRANSIT,
-      entryType: LedgerEntryType.PAYOUT_COMPLETE,
+      entryType: LedgerEntryType.PAYOUT_SENT,
       amount: breakdown.taxIncl.negated(),
       amountTaxIncl: breakdown.taxIncl.negated(),
       amountTaxExcl: breakdown.taxExcl.negated(),
@@ -204,7 +204,7 @@ export const PayoutService = {
     await LedgerService.createEntry(tx, {
       walletId: wallet.id,
       bucket: WalletBucket.IN_TRANSIT,
-      entryType: LedgerEntryType.PAYOUT_FAIL_RETURN,
+      entryType: LedgerEntryType.PAYOUT_FAILED_RETURN,
       amount: breakdown.taxIncl.negated(),
       amountTaxIncl: breakdown.taxIncl.negated(),
       amountTaxExcl: breakdown.taxExcl.negated(),
@@ -219,7 +219,7 @@ export const PayoutService = {
     await LedgerService.createEntry(tx, {
       walletId: wallet.id,
       bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.PAYOUT_FAIL_RETURN,
+      entryType: LedgerEntryType.PAYOUT_FAILED_RETURN,
       amount: breakdown.taxIncl,
       amountTaxIncl: breakdown.taxIncl,
       amountTaxExcl: breakdown.taxExcl,

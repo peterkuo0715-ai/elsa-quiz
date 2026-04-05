@@ -72,8 +72,6 @@ export async function getReconciliationList(filters: ReconciliationFilters) {
                 id: true,
                 orderNumber: true,
                 paidAt: true,
-                shippingFeeTaxIncl: true,
-                shippingFeeTaxExcl: true,
               },
             },
             store: {

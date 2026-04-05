@@ -1,5 +1,5 @@
 // ============================================================
-// All shared enums
+// All shared enums - PRD v1.1
 // ============================================================
 
 enum UserRole {
@@ -17,35 +17,43 @@ enum WalletBucket {
   IN_TRANSIT
 }
 
+// PRD v1.1 Section 14.2 - Full ledger entry types
 enum LedgerEntryType {
-  // Settlement
-  SETTLEMENT_CREDIT
-  APPRECIATION_RELEASE
-  COMMISSION_DEBIT
-  SHIPPING_FEE_CREDIT
-  // Payout
-  PAYOUT_RESERVE
-  PAYOUT_COMPLETE
-  PAYOUT_FAIL_RETURN
-  // Refund
-  REFUND_DEBIT
-  REFUND_COMMISSION_RETURN
-  REFUND_CAMPAIGN_RECOVERY
-  // Dispute
-  DISPUTE_FREEZE
-  DISPUTE_UNFREEZE
-  DISPUTE_DEBIT
+  // Settlement lifecycle
+  ORDER_CAPTURED                    // 訂單付款成功，款項進入系統
+  ORDER_PENDING_SETTLEMENT          // 款項進入 pending (鑑賞期中)
+  SETTLEMENT_RELEASED               // 鑑賞期結束，pending → available
+  // Fee charges
+  COMMISSION_CHARGED                // 平台抽成扣除
+  PAYMENT_FEE_CHARGED               // 金流手續費扣除
+  SHIPPING_INCOME_RECOGNIZED        // 運費收入入帳
+  // Hi Coin & Campaign
+  HI_COIN_PLATFORM_SUBSIDY          // 平台嗨幣補貼（模式A: 平台吸收）
+  HI_COIN_MERCHANT_CAMPAIGN_CHARGE  // 嗨幣活動成本（模式B: 商家負擔）
+  PROMOTION_COST_CHARGED            // 商家活動成本扣除
   // Reserve
   RESERVE_HOLD
   RESERVE_RELEASE
-  // Manual adjustment
+  // Refund
+  REFUND_DEBIT                      // 全額退款扣回
+  PARTIAL_REFUND_DEBIT              // 部分退款扣回
+  REFUND_COMMISSION_RETURN          // 退款抽成退還
+  REFUND_CAMPAIGN_RECOVERY          // 退款活動成本收回
+  HI_COIN_SUBSIDY_RETURN            // 退款時平台收回嗨幣補貼
+  // Dispute
+  DISPUTE_FREEZE_HOLD               // 爭議凍結 (available → reserved)
+  DISPUTE_FREEZE_RELEASE            // 爭議解凍 (reserved → available)
+  DISPUTE_DEBIT                     // 爭議判定扣回
+  // Payout
+  PAYOUT_REQUESTED                  // 提領申請 (available → in_transit)
+  PAYOUT_SENT                       // 提領成功 (in_transit 清除)
+  PAYOUT_FAILED_RETURN              // 提領失敗退回 (in_transit → available)
+  // Manual
   MANUAL_ADJUSTMENT_CREDIT
   MANUAL_ADJUSTMENT_DEBIT
-  // Hi Coin
-  HI_COIN_SUBSIDY
-  HI_COIN_SUBSIDY_RETURN
-  // Negative balance
-  NEGATIVE_BALANCE_CARRY
+  // Reversal & carry
+  REVERSAL                          // 沖銷/更正
+  NEGATIVE_BALANCE_CARRY            // 負餘額結轉
 }
 
 enum SettlementItemStatus {

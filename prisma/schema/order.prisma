@@ -62,9 +62,15 @@ model OrderItem {
   // Hi Coin payment split
   hiCoinAmount           Decimal       @db.Decimal(18, 4) @default(0) // 嗨幣折抵金額
   cashAmount             Decimal       @db.Decimal(18, 4) @default(0) // 台幣實付金額
+  // Hi Coin mode
+  hiCoinMode             String?       // "PLATFORM_SUBSIDY" | "MERCHANT_CAMPAIGN" | null
+  hiCoinCampaignCost     Decimal       @db.Decimal(18, 4) @default(0) // 嗨幣活動成本(商家負擔,模式B)
+  // Payment fee
+  paymentFeeRate         Decimal       @db.Decimal(5, 4)  @default(0) // 金流費率
+  paymentFeeAmount       Decimal       @db.Decimal(18, 4) @default(0) // 金流手續費
   // Campaign
   campaignId             String?
-  campaignDiscount       Decimal       @db.Decimal(18, 4) @default(0)
+  campaignDiscount       Decimal       @db.Decimal(18, 4) @default(0) // 商家活動成本
   // Timestamps
   createdAt              DateTime      @default(now())
   updatedAt              DateTime      @updatedAt

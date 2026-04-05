@@ -22,10 +22,10 @@ type TxClient = Omit<
  * Flow:
  * 1. Find settlement items where appreciation period has ended
  * 2. For each item, create ledger entries:
- *    - SETTLEMENT_CREDIT to PENDING
- *    - APPRECIATION_RELEASE from PENDING to AVAILABLE
- *    - COMMISSION_DEBIT from AVAILABLE (platform takes commission)
- *    - SHIPPING_FEE_CREDIT to AVAILABLE (100% to merchant)
+ *    - ORDER_CAPTURED to PENDING
+ *    - SETTLEMENT_RELEASED from PENDING to AVAILABLE
+ *    - COMMISSION_CHARGED from AVAILABLE (platform takes commission)
+ *    - SHIPPING_INCOME_RECOGNIZED to AVAILABLE (100% to merchant)
  *    - RESERVE_HOLD from AVAILABLE to RESERVED (if risk rules exist)
  * 3. Update settlement item status
  */
@@ -135,10 +135,8 @@ export const SettlementService = {
       netAmountTaxIncl: { toString(): string };
       netAmountTaxExcl: { toString(): string };
       netTaxAmount: { toString(): string };
+      netSettlementAmount?: { toString(): string };
       commissionAmount: { toString(): string };
-      shippingFeeTaxIncl: { toString(): string };
-      shippingFeeTaxExcl: { toString(): string };
-      shippingTaxAmount: { toString(): string };
       orderItem: {
         order: {
           merchant: {
@@ -156,11 +154,6 @@ export const SettlementService = {
     const netAmount = money(item.netAmountTaxIncl.toString());
     const netAmountTaxExcl = money(item.netAmountTaxExcl.toString());
     const netTax = money(item.netTaxAmount.toString());
-    const commission = money(item.commissionAmount.toString());
-    const commissionBreakdown = taxInclToBreakdown(commission);
-    const shippingIncl = money(item.shippingFeeTaxIncl.toString());
-    const shippingExcl = money(item.shippingFeeTaxExcl.toString());
-    const shippingTax = money(item.shippingTaxAmount.toString());
 
     // Calculate reserve if applicable
     const reserveRules = item.orderItem.order.merchant.reserveRules;
@@ -175,11 +168,11 @@ export const SettlementService = {
     // so we use sequential operations with idempotency keys
     const baseKey = `settle-${item.id}`;
 
-    // 1. APPRECIATION_RELEASE: PENDING -> AVAILABLE (the net amount)
+    // 1. SETTLEMENT_RELEASED: PENDING -> AVAILABLE (the net amount)
     await LedgerService.createEntry(prisma as unknown as Parameters<typeof LedgerService.createEntry>[0], {
       walletId: wallet.id,
       bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.APPRECIATION_RELEASE,
+      entryType: LedgerEntryType.SETTLEMENT_RELEASED,
       amount: netAmount,
       amountTaxIncl: netAmount,
       amountTaxExcl: netAmountTaxExcl,
