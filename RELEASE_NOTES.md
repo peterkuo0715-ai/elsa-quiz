@@ -504,11 +504,18 @@ src/
 ### 測試帳號
 | 帳號 | 密碼 | 角色 |
 |------|------|------|
-| admin@hi5.com | password123 | 超級管理員 |
-| finance@hi5.com | password123 | 平台財務 |
-| owner@merchant-a.com | password123 | 商家A負責人 |
-| owner@merchant-b.com | password123 | 商家B負責人 |
+| admin@hi5.com | 免密碼 | 超級管理員 |
+| finance@hi5.com | 免密碼 | 平台財務 |
+| owner@merchant-a.com | 免密碼 | 商家A負責人 |
+| owner@merchant-b.com | 免密碼 | 商家B負責人 |
+
+### POC 場景模擬器
+路徑：`/simulator`（從登入頁可進入）
+包含 15 個一鍵執行場景 + 資料重置功能。
+
+### Git Tag
+- `v1.0.0` - MVP Complete (2026-04-05)
 
 ---
 
-*MVP 全 6 Phase 完成。本文件可作為後續迭代與維運的基準參考。*
+*v1.0.0 已封版。後續功能需求請見 PRD_V2.md。*
