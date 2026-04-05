@@ -110,10 +110,28 @@ const SCENARIOS: Scenario[] = [
     category: "提領",
   },
 
+  // Hi Coin
+  {
+    id: "hi_coin_payment",
+    title: "14. 嗨幣結帳",
+    description: "消費者用台幣+嗨幣混合支付，平台補貼嗨幣給商家",
+    details: ["藍芽音箱 NT$1,900", "消費者付 1,700台幣 + 200嗨幣", "抽成依原價 1,900 計算", "平台補貼 200 嗨幣給商家"],
+    color: "border-amber-300 hover:border-amber-500",
+    category: "嗨幣",
+  },
+  {
+    id: "hi_coin_refund",
+    title: "15. 嗨幣退款（原路返回）",
+    description: "嗨幣訂單全額退款，台幣退台幣、嗨幣退嗨幣",
+    details: ["需先執行「嗨幣結帳」", "退消費者 1,700台幣 + 200嗨幣", "平台收回 200 嗨幣補貼", "抽成退還商家"],
+    color: "border-amber-400 hover:border-amber-600",
+    category: "嗨幣",
+  },
+
   // Reserve
   {
     id: "reserve_release",
-    title: "11. Reserve Hold / Release",
+    title: "16. Reserve Hold / Release",
     description: "商家B 結算時自動扣 Reserve，然後手動釋放",
     details: ["商家B (中風險) 有 Reserve 規則", "結算時自動扣留", "手動釋放回 Available"],
     color: "border-blue-300 hover:border-blue-500",
@@ -123,7 +141,7 @@ const SCENARIOS: Scenario[] = [
   // Adjustment
   {
     id: "manual_adjustment",
-    title: "12. 手動調整 Credit / Debit",
+    title: "17. 手動調整 Credit / Debit",
     description: "平台財務建立補發 + 扣回調整單",
     details: ["補發 NT$500 (Credit)", "扣回 NT$200 (Debit)", "淨增 NT$300，留稽核紀錄"],
     color: "border-indigo-300 hover:border-indigo-500",
@@ -133,7 +151,7 @@ const SCENARIOS: Scenario[] = [
   // Bank Change
   {
     id: "bank_change",
-    title: "13. 銀行帳號變更",
+    title: "18. 銀行帳號變更",
     description: "商家申請帳號變更 → 平台審核通過 → 生效",
     details: ["申請變更至台新銀行", "平台財務審核", "核准後新帳號立即生效"],
     color: "border-yellow-300 hover:border-yellow-500",
@@ -143,7 +161,7 @@ const SCENARIOS: Scenario[] = [
   // Idempotency
   {
     id: "idempotency_test",
-    title: "14. Webhook 重送 (冪等測試)",
+    title: "19. Webhook 重送 (冪等測試)",
     description: "同一筆付款 webhook 送兩次，驗證不會重複建單",
     details: ["同一個 idempotencyKey 送兩次", "第二次回傳與第一次相同結果", "驗證系統冪等性"],
     color: "border-gray-300 hover:border-gray-500",
@@ -151,7 +169,7 @@ const SCENARIOS: Scenario[] = [
   },
 ];
 
-const CATEGORIES = ["結算", "退款", "爭議", "提領", "Reserve", "調整", "帳號", "系統"];
+const CATEGORIES = ["結算", "退款", "爭議", "提領", "嗨幣", "Reserve", "調整", "帳號", "系統"];
 
 type CardState = "idle" | "loading" | "success" | "error";
 

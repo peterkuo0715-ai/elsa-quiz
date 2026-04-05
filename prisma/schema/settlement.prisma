@@ -24,6 +24,8 @@ model SettlementItem {
   campaignCost           Decimal              @db.Decimal(18, 4) @default(0)
   paymentFeeShare        Decimal              @db.Decimal(18, 4) @default(0)
   reserveAmount          Decimal              @db.Decimal(18, 4) @default(0)
+  // Hi Coin
+  hiCoinSubsidy          Decimal              @db.Decimal(18, 4) @default(0) // 平台嗨幣補貼金額
   // Net amount to merchant
   netAmountTaxIncl       Decimal              @db.Decimal(18, 4)
   netAmountTaxExcl       Decimal              @db.Decimal(18, 4)

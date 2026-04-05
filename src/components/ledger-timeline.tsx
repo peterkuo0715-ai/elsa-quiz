@@ -39,6 +39,8 @@ const entryTypeLabels: Record<LedgerEntryType, string> = {
   RESERVE_RELEASE: "保留金釋放",
   MANUAL_ADJUSTMENT_CREDIT: "手動調整(貸方)",
   MANUAL_ADJUSTMENT_DEBIT: "手動調整(借方)",
+  HI_COIN_SUBSIDY: "嗨幣補貼入帳",
+  HI_COIN_SUBSIDY_RETURN: "嗨幣補貼收回",
   NEGATIVE_BALANCE_CARRY: "負餘額結轉",
 };
 

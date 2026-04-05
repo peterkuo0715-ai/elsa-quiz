@@ -41,6 +41,10 @@ model RefundItem {
   paymentFeeRefund       Decimal @db.Decimal(18, 4) @default(0)
   // Campaign cost recovered (proportional)
   campaignCostRecovery   Decimal @db.Decimal(18, 4) @default(0)
+  // Hi Coin refund split (原路返回)
+  refundCashAmount       Decimal @db.Decimal(18, 4) @default(0)  // 退台幣金額
+  refundHiCoinAmount     Decimal @db.Decimal(18, 4) @default(0)  // 退嗨幣金額
+  hiCoinSubsidyReturn    Decimal @db.Decimal(18, 4) @default(0)  // 平台收回嗨幣補貼
   // Net debit to merchant = refundAmount - commissionRefund + campaignCostRecovery
   netMerchantDebit       Decimal @db.Decimal(18, 4)
   createdAt              DateTime @default(now())

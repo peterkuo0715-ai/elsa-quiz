@@ -41,6 +41,9 @@ enum LedgerEntryType {
   // Manual adjustment
   MANUAL_ADJUSTMENT_CREDIT
   MANUAL_ADJUSTMENT_DEBIT
+  // Hi Coin
+  HI_COIN_SUBSIDY
+  HI_COIN_SUBSIDY_RETURN
   // Negative balance
   NEGATIVE_BALANCE_CARRY
 }

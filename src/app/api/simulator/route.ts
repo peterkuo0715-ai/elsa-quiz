@@ -485,7 +485,195 @@ async function runScenario(scenario: string) {
       return { message: "銀行帳號變更: 申請 → 審核通過 → 台新銀行 ...7666 已生效" };
     }
 
-    // 14. Idempotency test
+    // 14. Hi Coin payment + settlement
+    case "hi_coin_payment": {
+      const m = await getMerchant("A");
+      if (!m.wallet) throw new Error("No wallet");
+      const id = uid();
+      const orderNumber = `ORD-HICOIN-${id}`;
+      const price = 1900;
+      const hiCoinUsed = 200; // consumer uses 200 Hi Coins
+      const cashPaid = price - hiCoinUsed; // 1700 TWD
+      const breakdown = taxInclToBreakdown(price);
+      const commRate = 0.1;
+      const commission = moneyCeil(moneyMul(breakdown.taxExcl, commRate));
+      const netAmount = moneyRound(moneySub(breakdown.taxIncl, commission));
+      const netBd = taxInclToBreakdown(netAmount);
+
+      // Create order with hi coin split
+      const order = await prisma.order.create({
+        data: {
+          id: `${id}-hc`, orderNumber, merchantId: m.id,
+          totalAmountTaxIncl: moneyToString(breakdown.taxIncl),
+          totalAmountTaxExcl: moneyToString(breakdown.taxExcl),
+          totalTaxAmount: moneyToString(breakdown.taxAmount),
+          shippingFeeTaxIncl: "0", shippingFeeTaxExcl: "0", shippingTaxAmount: "0",
+          paymentFee: "0", paidAt: new Date(),
+          items: { create: [{
+            productName: "藍芽音箱（嗨幣折抵）",
+            sku: `SKU-HC-${id.slice(0, 6)}`, storeId: m.stores[0]?.id, quantity: 1,
+            unitPriceTaxIncl: moneyToString(breakdown.taxIncl),
+            unitPriceTaxExcl: moneyToString(breakdown.taxExcl),
+            unitTaxAmount: moneyToString(breakdown.taxAmount),
+            subtotalTaxIncl: moneyToString(breakdown.taxIncl),
+            subtotalTaxExcl: moneyToString(breakdown.taxExcl),
+            subtotalTaxAmount: moneyToString(breakdown.taxAmount),
+            discountAmount: "0",
+            discountedPriceTaxIncl: moneyToString(breakdown.taxIncl),
+            discountedPriceTaxExcl: moneyToString(breakdown.taxExcl),
+            platformCommissionRate: moneyToString(money(commRate)),
+            platformCommission: moneyToString(commission),
+            hiCoinAmount: moneyToString(money(hiCoinUsed)),
+            cashAmount: moneyToString(money(cashPaid)),
+            campaignId: null, campaignDiscount: "0",
+          }] },
+        }, include: { items: true },
+      });
+
+      const oi = order.items[0];
+
+      // Settlement item
+      await prisma.settlementItem.create({
+        data: {
+          orderItemId: oi.id, merchantId: m.id,
+          status: SettlementItemStatus.AVAILABLE_FOR_PAYOUT,
+          itemAmountTaxIncl: moneyToString(breakdown.taxIncl),
+          itemAmountTaxExcl: moneyToString(breakdown.taxExcl),
+          itemTaxAmount: moneyToString(breakdown.taxAmount),
+          commissionAmount: moneyToString(commission),
+          commissionRate: moneyToString(money(commRate)),
+          netAmountTaxIncl: moneyToString(netBd.taxIncl),
+          netAmountTaxExcl: moneyToString(netBd.taxExcl),
+          netTaxAmount: moneyToString(netBd.taxAmount),
+          hiCoinSubsidy: moneyToString(money(hiCoinUsed)),
+          paidAt: new Date(), shippedAt: new Date(),
+          deliveredAt: addDays(new Date(), -8),
+          appreciationEndsAt: addDays(new Date(), -1),
+          settledAt: new Date(),
+        },
+      });
+
+      // Ledger: net amount (cash portion) to AVAILABLE
+      const cashNetBd = taxInclToBreakdown(moneyRound(moneySub(money(cashPaid), commission)));
+      await LedgerService.createEntry(tx(), {
+        walletId: m.wallet.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.APPRECIATION_RELEASE,
+        amount: cashNetBd.taxIncl, amountTaxIncl: cashNetBd.taxIncl,
+        amountTaxExcl: cashNetBd.taxExcl, taxAmount: cashNetBd.taxAmount,
+        referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: oi.id,
+        idempotencyKey: `sim-hc-settle-${oi.id}`,
+        description: `結算入帳（台幣部分）: NT$${cashPaid} - 抽成 ${commission}`,
+      });
+
+      // Ledger: Hi Coin subsidy from platform
+      const hcBd = taxInclToBreakdown(hiCoinUsed);
+      await LedgerService.createEntry(tx(), {
+        walletId: m.wallet.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.HI_COIN_SUBSIDY,
+        amount: hcBd.taxIncl, amountTaxIncl: hcBd.taxIncl,
+        amountTaxExcl: hcBd.taxExcl, taxAmount: hcBd.taxAmount,
+        referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: oi.id,
+        idempotencyKey: `sim-hc-subsidy-${oi.id}`,
+        description: `平台嗨幣補貼: ${hiCoinUsed} 嗨幣 (1:1 = NT$${hiCoinUsed})`,
+      });
+
+      return {
+        message: `嗨幣訂單 ${orderNumber} 已結算！商品 NT$1,900 = 台幣 NT$1,700 + 嗨幣 200。抽成 NT$${commission}（依原價），平台補貼 NT$200 嗨幣。商家淨額 NT$${netAmount}`,
+      };
+    }
+
+    // 15. Hi Coin refund (原路返回)
+    case "hi_coin_refund": {
+      const m = await getMerchant("A");
+      if (!m.wallet) throw new Error("No wallet");
+
+      // Find a hi-coin order to refund
+      const hiCoinItem = await prisma.orderItem.findFirst({
+        where: { order: { merchantId: m.id }, hiCoinAmount: { gt: 0 } },
+        include: { order: true, settlementItem: true },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!hiCoinItem) {
+        return { message: "找不到嗨幣訂單，請先執行「嗨幣結帳」場景" };
+      }
+
+      const totalRefund = money(hiCoinItem.subtotalTaxIncl.toString());
+      const hiCoinRefund = money(hiCoinItem.hiCoinAmount.toString());
+      const cashRefund = money(hiCoinItem.cashAmount.toString());
+      const totalBd = taxInclToBreakdown(totalRefund);
+      const commission = money(hiCoinItem.platformCommission.toString());
+
+      // Commission refund (ceiling)
+      const commRefund = moneyCeil(commission);
+
+      // Create refund record
+      const refund = await prisma.refund.create({
+        data: {
+          refundNumber: `RF-HC-${uid()}`, orderId: hiCoinItem.orderId,
+          refundType: RefundType.FULL,
+          totalAmountTaxIncl: moneyToString(totalBd.taxIncl),
+          totalAmountTaxExcl: moneyToString(totalBd.taxExcl),
+          totalTaxAmount: moneyToString(totalBd.taxAmount),
+          reason: "模擬嗨幣訂單全額退款（原路返回）",
+          processedAt: new Date(), processedBy: "simulator",
+          items: { create: [{
+            orderItemId: hiCoinItem.id,
+            refundAmountTaxIncl: moneyToString(totalBd.taxIncl),
+            refundAmountTaxExcl: moneyToString(totalBd.taxExcl),
+            refundTaxAmount: moneyToString(totalBd.taxAmount),
+            refundCashAmount: moneyToString(cashRefund),
+            refundHiCoinAmount: moneyToString(hiCoinRefund),
+            hiCoinSubsidyReturn: moneyToString(hiCoinRefund),
+            commissionRefund: moneyToString(commRefund),
+            campaignCostRecovery: "0",
+            netMerchantDebit: moneyToString(moneyRound(moneySub(totalRefund, commRefund))),
+          }] },
+        }, include: { items: true },
+      });
+
+      // Ledger: debit cash portion from merchant
+      const cashDebitBd = taxInclToBreakdown(moneyRound(moneySub(cashRefund, commRefund)));
+      await LedgerService.createEntry(tx(), {
+        walletId: m.wallet.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.REFUND_DEBIT,
+        amount: cashDebitBd.taxIncl.negated(),
+        amountTaxIncl: cashDebitBd.taxIncl.negated(),
+        amountTaxExcl: cashDebitBd.taxExcl.negated(),
+        taxAmount: cashDebitBd.taxAmount.negated(),
+        referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id,
+        idempotencyKey: `sim-hc-refund-cash-${refund.items[0].id}`,
+        description: `退款扣回（台幣部分）: NT$${cashRefund} - 抽成退還 NT$${commRefund}`,
+      });
+
+      // Ledger: return Hi Coin subsidy (platform takes back)
+      const hcReturnBd = taxInclToBreakdown(hiCoinRefund);
+      await LedgerService.createEntry(tx(), {
+        walletId: m.wallet.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN,
+        amount: hcReturnBd.taxIncl.negated(),
+        amountTaxIncl: hcReturnBd.taxIncl.negated(),
+        amountTaxExcl: hcReturnBd.taxExcl.negated(),
+        taxAmount: hcReturnBd.taxAmount.negated(),
+        referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id,
+        idempotencyKey: `sim-hc-subsidy-return-${refund.items[0].id}`,
+        description: `平台收回嗨幣補貼: ${hiCoinRefund} 嗨幣`,
+      });
+
+      // Update settlement item
+      if (hiCoinItem.settlementItem) {
+        await prisma.settlementItem.update({
+          where: { id: hiCoinItem.settlementItem.id },
+          data: { status: SettlementItemStatus.REFUNDED },
+        });
+      }
+
+      return {
+        message: `嗨幣訂單退款完成！退消費者: NT$${cashRefund}(台幣) + ${hiCoinRefund}(嗨幣)。平台收回 NT$${hiCoinRefund} 補貼，退還商家抽成 NT$${commRefund}`,
+      };
+    }
+
+    // 16. Idempotency test
     case "idempotency_test": {
       const idempKey = `idem-test-${uid()}`;
       // First call

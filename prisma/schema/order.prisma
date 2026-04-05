@@ -59,6 +59,9 @@ model OrderItem {
   // Platform commission (calculated on discounted price excl tax)
   platformCommissionRate Decimal       @db.Decimal(5, 4) @default(0)
   platformCommission     Decimal       @db.Decimal(18, 4) @default(0)
+  // Hi Coin payment split
+  hiCoinAmount           Decimal       @db.Decimal(18, 4) @default(0) // 嗨幣折抵金額
+  cashAmount             Decimal       @db.Decimal(18, 4) @default(0) // 台幣實付金額
   // Campaign
   campaignId             String?
   campaignDiscount       Decimal       @db.Decimal(18, 4) @default(0)
