@@ -18,19 +18,13 @@ const L3_MAP: Record<string, Array<{ id: string; label: string; desc: string }>>
     { id: "show_pending", label: "查看狀態", desc: "款項在 Pending 中，不可提領" },
     { id: "refund_in_appreciation", label: "鑑賞期內退款", desc: "尚未結算就全額退款" },
   ],
-  settled: [
-    { id: "payout_success", label: "商家提領成功", desc: "全額提領 → 銀行匯款成功" },
-    { id: "payout_failure", label: "商家提領失敗", desc: "提領失敗 → 自動退回 wallet" },
-    { id: "reserve_release", label: "Reserve 釋放", desc: "扣留的保留金釋放回可用" },
-  ],
+  settled: [],  // 正常完成：僅顯示結算結果，無 L3 操作（提領等在商家後台）
   problem: [
     { id: "partial_refund", label: "部分退貨（退1件）", desc: "退第一件商品，第二件保留" },
     { id: "full_refund", label: "全額退款", desc: "全部退款（嗨幣原路返回）" },
     { id: "dispute_resolve", label: "爭議 → 凍結 → 解除", desc: "凍結500 → 商家勝訴 → 解凍" },
     { id: "dispute_debit", label: "爭議 → 凍結 → 扣回", desc: "凍結500 → 商家敗訴 → 永久扣回" },
     { id: "negotiated_refund", label: "協商退款（退NT$1,000）", desc: "協商只退部分金額，非整件退" },
-    { id: "negative_balance_refund", label: "已提領後退款（負餘額）", desc: "先提領再退款 → 負餘額暫停提領" },
-    { id: "manual_adjustment", label: "手動調整單", desc: "補發+300 / 扣回-100" },
   ],
 };
 
@@ -211,10 +205,13 @@ export default function SimulatorPage() {
                       </button>
 
                       {messages[`${order.orderId}-settled`] && l2.id === "settled" && (
-                        <div className="mx-4 mb-2 rounded bg-green-50 p-2 text-xs text-green-800">{messages[`${order.orderId}-settled`]}</div>
+                        <div className="mx-4 mb-2 rounded bg-green-50 p-2 text-xs text-green-800 whitespace-pre-wrap">
+                          {messages[`${order.orderId}-settled`]}
+                          <p className="mt-2 text-green-600">已入帳至商家 wallet，可登入商家後台查看並操作提領。</p>
+                        </div>
                       )}
 
-                      {isExpanded && (
+                      {isExpanded && l3Items.length > 0 && (
                         <div className="border-t px-4 pb-3 pt-2 space-y-2">
                           {l3Items.map((l3) => {
                             const executed = order.executedL3.has(l3.id);

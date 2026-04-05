@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { LedgerService } from "@/server/services/ledger.service";
-import { PayoutService } from "@/server/services/payout.service";
 import { RefundService } from "@/server/services/refund.service";
 import { DisputeService } from "@/server/services/dispute.service";
-import { ReserveService } from "@/server/services/reserve.service";
 import {
   SettlementItemStatus, DisputeStatus, WalletBucket, LedgerEntryType,
   ReferenceType, RefundType, BankAccountChangeStatus,
@@ -317,67 +315,7 @@ async function runL3(action: string, orderId: string) {
       return { message: `爭議 ${d.caseNumber}: 凍結 NT$${freezeAmt} → 商家敗訴 → 永久扣回。商家Available: ${bal.available}` };
     }
 
-    // --- Payout success ---
-    case "payout_success": {
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      if (bal.available.isZero() || bal.available.isNegative()) return { error: "無可提領餘額" };
-      const p = await PayoutService.createRequest(PC(), { merchantId: m.id, bankAccountId: m.bankAccounts[0].id, amountTaxIncl: bal.available.toString(), requestedBy: "simulator" });
-      await PayoutService.handleSuccess(PC(), p.id);
-      return { message: `提領成功: NT$${bal.available} 已匯出`, merchantPayout: bal.available.toString() };
-    }
-
-    // --- Payout failure ---
-    case "payout_failure": {
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      if (bal.available.isZero() || bal.available.isNegative()) return { error: "無可提領餘額" };
-      const p = await PayoutService.createRequest(PC(), { merchantId: m.id, bankAccountId: m.bankAccounts[0].id, amountTaxIncl: bal.available.toString(), requestedBy: "simulator" });
-      await PayoutService.handleFailure(PC(), p.id, "銀行帳號無效");
-      const balAfter = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `提領失敗: NT$${bal.available} 已自動退回 wallet。Available: ${balAfter.available}` };
-    }
-
-    // --- Reserve release ---
-    case "reserve_release": {
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      if (bal.reserved.isZero()) return { error: "無 Reserve 可釋放" };
-      await ReserveService.releaseReserve(PC(), { walletId: m.wallet!.id, amountTaxIncl: bal.reserved.toString(), reserveRuleId: "sim-release", reason: "模擬釋放" });
-      const balAfter = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `Reserve NT$${bal.reserved} 已釋放。Available: ${balAfter.available}` };
-    }
-
-    // --- Post-payout refund (negative balance) ---
-    case "negative_balance_refund": {
-      // First payout all available
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      if (bal.available.isPositive()) {
-        const p = await PayoutService.createRequest(PC(), { merchantId: m.id, bankAccountId: m.bankAccounts[0].id, amountTaxIncl: bal.available.toString(), requestedBy: "simulator" });
-        await PayoutService.handleSuccess(PC(), p.id);
-      }
-      // Then refund all items
-      for (const oi of orderItems) {
-        const si = oi.settlementItem;
-        if (!si || si.status === SettlementItemStatus.REFUNDED) continue;
-        const net = money(si.netSettlementAmount.toString());
-        const netBd = taxInclToBreakdown(net);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.NEGATIVE_BALANCE_CARRY, amount: netBd.taxIncl.negated(), amountTaxIncl: netBd.taxIncl.negated(), amountTaxExcl: netBd.taxExcl.negated(), taxAmount: netBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-negbal-${oi.id}`, description: `已提領後退款 → 負餘額` });
-        await prisma.settlementItem.update({ where: { id: si.id }, data: { status: SettlementItemStatus.REFUNDED } });
-      }
-      await prisma.merchantWallet.update({ where: { id: m.wallet!.id }, data: { payoutSuspended: true } });
-      const balAfter = await LedgerService.getBalances(TX(), m.wallet!.id);
-      const totalRefundCash = orderItems.reduce((s, oi) => s.plus(money(oi.cashAmount.toString())), ZERO);
-      const totalRefundHiCoin = orderItems.reduce((s, oi) => s.plus(money(oi.hiCoinAmount.toString())), ZERO);
-      return { message: `已提領後退款! 商家Available: ${balAfter.available}（負餘額），提領已暫停`, consumerRefund: { cash: totalRefundCash.toString(), hiCoin: totalRefundHiCoin.toString() } };
-    }
-
-    // --- Manual adjustment ---
-    case "manual_adjustment": {
-      const c = taxInclToBreakdown(300);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.MANUAL_ADJUSTMENT_CREDIT, amount: c.taxIncl, amountTaxIncl: c.taxIncl, amountTaxExcl: c.taxExcl, taxAmount: c.taxAmount, referenceType: ReferenceType.SETTLEMENT_ADJUSTMENT, referenceId: uid(), idempotencyKey: `sim-adj-c-${uid()}`, description: "手動補發 NT$300" });
-      const d = taxInclToBreakdown(100);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.MANUAL_ADJUSTMENT_DEBIT, amount: d.taxIncl.negated(), amountTaxIncl: d.taxIncl.negated(), amountTaxExcl: d.taxExcl.negated(), taxAmount: d.taxAmount.negated(), referenceType: ReferenceType.SETTLEMENT_ADJUSTMENT, referenceId: uid(), idempotencyKey: `sim-adj-d-${uid()}`, description: "手動扣回 NT$100" });
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `手動調整: 補發+300 扣回-100 = 淨增200。Available: ${bal.available}` };
-    }
+    // (提領/Reserve/負餘額/手動調整 已移至商家後台操作)
 
     default:
       return { error: `未知操作: ${action}` };
