@@ -55,6 +55,15 @@ export function moneyIsNegative(value: Decimal.Value): boolean {
   return money(value).isNegative();
 }
 
+/**
+ * Ceiling to integer (無條件進位到整數元).
+ * Used for platform commission: always round UP to ensure platform doesn't undercharge.
+ * e.g. 28.5 → 29, 100.0 → 100, 39.96 → 40
+ */
+export function moneyCeil(value: Decimal.Value): Decimal {
+  return money(value).ceil();
+}
+
 /** Compare: returns -1, 0, or 1 */
 export function moneyCompare(
   a: Decimal.Value,

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/server/db";
 import { IdempotencyService } from "@/server/services/idempotency.service";
 import { SettlementItemStatus } from "@/generated/prisma";
-import { money, moneyMul, moneySub, moneyRound, moneyToString } from "@/lib/money";
+import { money, moneyMul, moneySub, moneyRound, moneyCeil, moneyToString } from "@/lib/money";
 import { taxInclToBreakdown } from "@/lib/tax";
 import { APPRECIATION_PERIOD_DAYS } from "@/lib/constants";
 
@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
         const discountedBreakdown = taxInclToBreakdown(discountedIncl);
 
         const commRate = money(item.platformCommissionRate || 0);
-        const commission = moneyRound(
+        const commission = moneyCeil(
           moneyMul(discountedBreakdown.taxExcl, commRate)
         );
 

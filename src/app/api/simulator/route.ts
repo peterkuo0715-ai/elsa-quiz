@@ -17,7 +17,7 @@ import {
   RefundType,
   AdjustmentType,
 } from "@/generated/prisma";
-import { money, moneyMul, moneySub, moneyRound, moneyToString } from "@/lib/money";
+import { money, moneyMul, moneySub, moneyRound, moneyCeil, moneyToString } from "@/lib/money";
 import { taxInclToBreakdown } from "@/lib/tax";
 import { addDays } from "date-fns";
 import type { PrismaClient } from "@/generated/prisma";
@@ -48,7 +48,7 @@ async function createAndSettleOrder(params: {
     merchantItems.set(item.merchantTaxId, list);
   }
 
-  const results: Array<{ merchantName: string; orderItemId: string; settlementItemId: string; netAmount: string }> = [];
+  const results: Array<{ merchantName: string; orderId: string; orderItemId: string; settlementItemId: string; netAmount: string }> = [];
 
   for (const [taxId, items] of merchantItems) {
     const merchant = await prisma.merchant.findFirst({ where: { taxId }, include: { wallet: true, stores: true, reserveRules: { where: { isActive: true } } } });
@@ -61,7 +61,7 @@ async function createAndSettleOrder(params: {
     let totalIncl = money(0);
     const orderItemsData = items.map((item) => {
       const breakdown = taxInclToBreakdown(item.price);
-      const commission = moneyRound(moneyMul(breakdown.taxExcl, item.commissionRate));
+      const commission = moneyCeil(moneyMul(breakdown.taxExcl, item.commissionRate));
       totalIncl = totalIncl.plus(breakdown.taxIncl);
       return {
         productName: item.productName,
@@ -172,6 +172,7 @@ async function createAndSettleOrder(params: {
 
       results.push({
         merchantName: merchant.name,
+        orderId,
         orderItemId: oi.id,
         settlementItemId: si.id,
         netAmount: netBreakdown.taxIncl.toString(),
@@ -194,7 +195,7 @@ async function runScenario(scenario: string) {
       const price = 1800;
       const breakdown = taxInclToBreakdown(price);
       const commRate = 0.1;
-      const commission = moneyRound(moneyMul(breakdown.taxExcl, commRate));
+      const commission = moneyCeil(moneyMul(breakdown.taxExcl, commRate));
       const netAmount = moneyRound(moneySub(breakdown.taxIncl, commission));
       const netBd = taxInclToBreakdown(netAmount);
 
@@ -314,7 +315,7 @@ async function runScenario(scenario: string) {
       const refundNum = `RF-${uid()}`;
       const refund = await prisma.refund.create({
         data: {
-          refundNumber: refundNum, orderId: r.results[0].orderItemId.split("-").slice(0, -1).join("-") || uid(),
+          refundNumber: refundNum, orderId: r.results[0].orderId,
           refundType: RefundType.PARTIAL,
           totalAmountTaxIncl: "300", totalAmountTaxExcl: moneyToString(taxInclToBreakdown(300).taxExcl), totalTaxAmount: moneyToString(taxInclToBreakdown(300).taxAmount),
           reason: "模擬部分退款", processedAt: new Date(), processedBy: "simulator",
@@ -346,7 +347,7 @@ async function runScenario(scenario: string) {
       });
       const refund = await prisma.refund.create({
         data: {
-          refundNumber: `RF-${uid()}`, orderId: uid(), refundType: RefundType.FULL,
+          refundNumber: `RF-${uid()}`, orderId: r.results[0].orderId, refundType: RefundType.FULL,
           totalAmountTaxIncl: "600", totalAmountTaxExcl: moneyToString(taxInclToBreakdown(600).taxExcl), totalTaxAmount: moneyToString(taxInclToBreakdown(600).taxAmount),
           reason: "模擬全額退款", processedAt: new Date(), processedBy: "simulator",
           items: { create: [{ orderItemId: r.results[0].orderItemId, refundAmountTaxIncl: "600", refundAmountTaxExcl: moneyToString(taxInclToBreakdown(600).taxExcl), refundTaxAmount: moneyToString(taxInclToBreakdown(600).taxAmount), commissionRefund: moneyToString(bd.commissionRefund), campaignCostRecovery: "0", netMerchantDebit: moneyToString(bd.netMerchantDebit) }] },
@@ -431,7 +432,7 @@ async function runScenario(scenario: string) {
       // Now refund - will create negative balance
       const bd = RefundService.calculateRefundBreakdown({ refundAmountTaxIncl: "2000", originalItemAmountTaxIncl: "2000", originalCommission: moneyToString(moneyMul(taxInclToBreakdown(2000).taxExcl, 0.1)), campaignDiscount: "0" });
       const refund = await prisma.refund.create({
-        data: { refundNumber: `RF-${uid()}`, orderId: uid(), refundType: RefundType.FULL, totalAmountTaxIncl: "2000", totalAmountTaxExcl: moneyToString(taxInclToBreakdown(2000).taxExcl), totalTaxAmount: moneyToString(taxInclToBreakdown(2000).taxAmount), reason: "模擬已提領後退款", processedAt: new Date(), processedBy: "simulator",
+        data: { refundNumber: `RF-${uid()}`, orderId: r.results[0].orderId, refundType: RefundType.FULL, totalAmountTaxIncl: "2000", totalAmountTaxExcl: moneyToString(taxInclToBreakdown(2000).taxExcl), totalTaxAmount: moneyToString(taxInclToBreakdown(2000).taxAmount), reason: "模擬已提領後退款", processedAt: new Date(), processedBy: "simulator",
           items: { create: [{ orderItemId: r.results[0].orderItemId, refundAmountTaxIncl: "2000", refundAmountTaxExcl: moneyToString(taxInclToBreakdown(2000).taxExcl), refundTaxAmount: moneyToString(taxInclToBreakdown(2000).taxAmount), commissionRefund: moneyToString(bd.commissionRefund), campaignCostRecovery: "0", netMerchantDebit: moneyToString(bd.netMerchantDebit) }] },
         }, include: { items: true },
       });

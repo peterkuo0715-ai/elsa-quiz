@@ -5,7 +5,7 @@ import {
 } from "@/generated/prisma";
 import type { PrismaClient } from "@/generated/prisma";
 import { LedgerService } from "./ledger.service";
-import { money, moneyMul, moneyDiv, moneySub, moneyRound, moneyToString, moneyIsNegative, ZERO } from "@/lib/money";
+import { money, moneyMul, moneyDiv, moneySub, moneyRound, moneyCeil, moneyToString, moneyIsNegative, ZERO } from "@/lib/money";
 import { taxInclToBreakdown } from "@/lib/tax";
 
 type TxClient = Omit<
@@ -43,7 +43,8 @@ export const RefundService = {
       : moneyDiv(refundAmount, originalAmount);
 
     // Commission refund (proportional) - platform returns this to merchant
-    const commissionRefund = moneyRound(moneyMul(originalCommission, ratio));
+    // Use ceiling to match original commission calculation
+    const commissionRefund = moneyCeil(moneyMul(originalCommission, ratio));
 
     // Campaign cost recovery (proportional) - merchant returns this to platform
     const campaignCostRecovery = moneyRound(moneyMul(campaignDiscount, ratio));
