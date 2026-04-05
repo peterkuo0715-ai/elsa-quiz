@@ -147,11 +147,13 @@ async function createFullOrder(params: {
       const productAmt = extra._bd.taxIncl;
 
       // PRD v1.1 公式: 商家實得 = 商品 + 運費 - 抽成 - 金流費 - 活動成本 - 嗨幣活動成本 + 平台補貼
-      let netAmount = productAmt.plus(shipping).minus(commission).minus(paymentFee).minus(campaign);
       const platformSubsidy = extra.hiCoinMode === "PLATFORM_SUBSIDY" ? hiCoin : money(0);
       const hiCoinCampaignCost = extra.hiCoinMode === "MERCHANT_CAMPAIGN" ? hiCoin : money(0);
-      netAmount = netAmount.minus(hiCoinCampaignCost).plus(platformSubsidy);
-      netAmount = moneyRound(netAmount);
+      // settlementBase = 不含補貼的結算金額（用於 SETTLEMENT_RELEASED ledger entry）
+      const settlementBase = moneyRound(productAmt.plus(shipping).minus(commission).minus(paymentFee).minus(campaign).minus(hiCoinCampaignCost));
+      // netAmount = 含補貼的商家最終實得（用於 DB 紀錄顯示）
+      const netAmount = moneyRound(settlementBase.plus(platformSubsidy));
+      const settlementBd = taxInclToBreakdown(settlementBase);
       const netBd = taxInclToBreakdown(netAmount);
 
       const status = settle ? SettlementItemStatus.AVAILABLE_FOR_PAYOUT : SettlementItemStatus.IN_APPRECIATION_PERIOD;
@@ -188,14 +190,15 @@ async function createFullOrder(params: {
 
       // Ledger entries only if settled
       if (settle) {
+        // SETTLEMENT_RELEASED = 不含補貼的金額（補貼另記）
         await LedgerService.createEntry(TX(), {
           walletId: merchant.wallet.id, bucket: WalletBucket.AVAILABLE,
           entryType: LedgerEntryType.SETTLEMENT_RELEASED,
-          amount: netBd.taxIncl, amountTaxIncl: netBd.taxIncl,
-          amountTaxExcl: netBd.taxExcl, taxAmount: netBd.taxAmount,
+          amount: settlementBd.taxIncl, amountTaxIncl: settlementBd.taxIncl,
+          amountTaxExcl: settlementBd.taxExcl, taxAmount: settlementBd.taxAmount,
           referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
           idempotencyKey: `sim-settle-${si.id}`,
-          description: `結算入帳: ${oi.productName} 淨額 ${netAmount}`,
+          description: `結算入帳: ${oi.productName} 結算 ${settlementBase}${!platformSubsidy.isZero() ? ` + 補貼 ${platformSubsidy}` : ""} = 淨額 ${netAmount}`,
         });
 
         if (!platformSubsidy.isZero()) {
@@ -399,12 +402,22 @@ async function runScenario(scenario: string) {
           items: { create: [{ orderItemId: hiItem.id, refundAmountTaxIncl: moneyToString(totalBd.taxIncl), refundAmountTaxExcl: moneyToString(totalBd.taxExcl), refundTaxAmount: moneyToString(totalBd.taxAmount), refundCashAmount: moneyToString(cashRefund), refundHiCoinAmount: moneyToString(hiCoinRefund), hiCoinSubsidyReturn: moneyToString(hiCoinRefund), commissionRefund: moneyToString(comm), campaignCostRecovery: "0", netMerchantDebit: moneyToString(moneyRound(moneySub(total, comm))) }] },
         }, include: { items: true },
       });
-      const cashDebit = taxInclToBreakdown(moneyRound(moneySub(cashRefund, comm)));
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: cashDebit.taxIncl.negated(), amountTaxIncl: cashDebit.taxIncl.negated(), amountTaxExcl: cashDebit.taxExcl.negated(), taxAmount: cashDebit.taxAmount.negated(), referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id, idempotencyKey: `sim-hcrf-c-${refund.items[0].id}`, description: `退款台幣部分 ${cashRefund} - 抽成 ${comm}` });
+      // 退款邏輯：
+      // 結算時 available = settlementBase(商品-抽成-金流費) + platformSubsidy
+      // 退款需扣回: settlementBase + platformSubsidy = netAmount (商家淨額全部)
+      // 退款後: available 會變成 -paymentFee（商家淨損失金流費）
+      // 使用 NEGATIVE_BALANCE_CARRY 允許負數
+      const paymentFee = moneyCeil(moneyMul(total, money(hiItem.paymentFeeRate.toString())));
+      const netSettlement = moneyRound(total.minus(comm).minus(paymentFee));
+      // 先扣結算部分（不含補貼）
+      const settlBd = taxInclToBreakdown(netSettlement);
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: settlBd.taxIncl.negated(), amountTaxIncl: settlBd.taxIncl.negated(), amountTaxExcl: settlBd.taxExcl.negated(), taxAmount: settlBd.taxAmount.negated(), referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id, idempotencyKey: `sim-hcrf-c-${refund.items[0].id}`, description: `退款扣回結算部分: ${settlBd.taxIncl}` });
+      // 再扣嗨幣補貼
       const hcBd = taxInclToBreakdown(hiCoinRefund);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id, idempotencyKey: `sim-hcrf-h-${refund.items[0].id}`, description: `平台收回嗨幣補貼 ${hiCoinRefund}` });
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.REFUND_ITEM, referenceId: refund.items[0].id, idempotencyKey: `sim-hcrf-h-${refund.items[0].id}`, description: `平台收回嗨幣補貼: ${hiCoinRefund}` });
       if (hiItem.settlementItem) await prisma.settlementItem.update({ where: { id: hiItem.settlementItem.id }, data: { status: SettlementItemStatus.REFUNDED } });
-      return { message: `嗨幣退款完成！退台幣 ${cashRefund} + 嗨幣 ${hiCoinRefund}，平台收回補貼 ${hiCoinRefund}，退還抽成 ${comm}` };
+      const balAfter = await LedgerService.getBalances(TX(), m.wallet!.id);
+      return { message: `嗨幣退款完成！退消費者: ${cashRefund}台幣 + ${hiCoinRefund}嗨幣\n扣回結算 ${settlBd.taxIncl} + 收回補貼 ${hcBd.taxIncl}\n退還抽成 ${comm}，金流費 ${paymentFee} 不退\n商家餘額: ${balAfter.available}` };
     }
 
     // 10. 爭議凍結
