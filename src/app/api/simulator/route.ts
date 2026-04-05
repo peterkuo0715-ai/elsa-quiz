@@ -5,7 +5,7 @@ import { RefundService } from "@/server/services/refund.service";
 import { DisputeService } from "@/server/services/dispute.service";
 import {
   SettlementItemStatus, DisputeStatus, WalletBucket, LedgerEntryType,
-  ReferenceType, RefundType, BankAccountChangeStatus,
+  ReferenceType, RefundType,
 } from "@/generated/prisma";
 import { money, moneyMul, moneySub, moneyRound, moneyCeil, moneyToString, ZERO } from "@/lib/money";
 import { taxInclToBreakdown } from "@/lib/tax";
@@ -26,53 +26,60 @@ async function getMerchantA() {
 }
 
 // ================================================================
-// L1: Create Order (付款)
+// Single execution endpoint: takes L1-L4 selections, runs full flow
 // ================================================================
-async function createOrder(type: "cash" | "hicoin") {
+interface ExecuteParams {
+  l1: "single" | "multi";          // 單商品 / 多商品
+  l2: "cash" | "hicoin";           // 純台幣 / 台幣+嗨幣
+  l3: "full_pay" | "installment";  // 一次付清 / 分期
+  l4: "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
+  refundAmount?: number;            // 協商/裁決退款金額
+}
+
+async function execute(params: ExecuteParams) {
   const m = await getMerchantA();
   const id = uid();
 
-  const isCash = type === "cash";
-  const items = isCash
-    ? [
-        { name: "藍芽耳機", price: 1500, qty: 1 },
-        { name: "藍芽耳機保護殼", price: 500, qty: 1 },
-      ]
+  // === Build order items based on L1 + L2 ===
+  const isSingle = params.l1 === "single";
+  const isHiCoin = params.l2 === "hicoin";
+  const isInstallment = params.l3 === "installment";
+  const commRate = 0.1;
+  const payFeeRate = isInstallment ? 0.035 : 0.028; // 分期金流費較高
+  const shipping = 80;
+
+  const products = isSingle
+    ? [{ name: "藍芽耳機", price: 1500, hiCoin: isHiCoin ? 200 : 0 }]
     : [
-        { name: "藍芽音箱", price: 1900, qty: 1 },
-        { name: "藍芽音箱底座", price: 600, qty: 1 },
+        { name: "藍芽耳機", price: 1500, hiCoin: isHiCoin ? 200 : 0 },
+        { name: "耳機保護殼", price: 500, hiCoin: isHiCoin ? 100 : 0 },
       ];
 
-  const commRate = 0.1;
-  const payFeeRate = 0.028;
-  const shipping = 80;
-  const hiCoinPerItem = isCash ? 0 : 200;
-
-  const orderItemsData = items.map((item) => {
-    const bd = taxInclToBreakdown(item.price);
+  // === Create order + settlement items ===
+  const orderItemsData = products.map((p) => {
+    const bd = taxInclToBreakdown(p.price);
     const commission = moneyCeil(moneyMul(bd.taxExcl, commRate));
     const paymentFee = moneyCeil(moneyMul(bd.taxIncl, payFeeRate));
-    const hiCoin = money(hiCoinPerItem);
+    const hiCoin = money(p.hiCoin);
     const cash = moneySub(bd.taxIncl, hiCoin);
-
     return {
-      productName: item.name, sku: `SKU-${uid().slice(0, 6)}`, storeId: m.stores[0]?.id, quantity: item.qty,
+      productName: p.name, sku: `SKU-${uid().slice(0, 6)}`, storeId: m.stores[0]?.id, quantity: 1,
       unitPriceTaxIncl: moneyToString(bd.taxIncl), unitPriceTaxExcl: moneyToString(bd.taxExcl), unitTaxAmount: moneyToString(bd.taxAmount),
       subtotalTaxIncl: moneyToString(bd.taxIncl), subtotalTaxExcl: moneyToString(bd.taxExcl), subtotalTaxAmount: moneyToString(bd.taxAmount),
       discountAmount: "0", discountedPriceTaxIncl: moneyToString(bd.taxIncl), discountedPriceTaxExcl: moneyToString(bd.taxExcl),
       platformCommissionRate: moneyToString(money(commRate)), platformCommission: moneyToString(commission),
       hiCoinAmount: moneyToString(hiCoin), cashAmount: moneyToString(cash),
-      hiCoinMode: hiCoinPerItem > 0 ? "PLATFORM_SUBSIDY" : null, hiCoinCampaignCost: "0",
+      hiCoinMode: p.hiCoin > 0 ? "PLATFORM_SUBSIDY" : null, hiCoinCampaignCost: "0",
       paymentFeeRate: moneyToString(money(payFeeRate)), paymentFeeAmount: moneyToString(paymentFee),
       campaignId: null, campaignDiscount: "0",
       _commission: commission, _paymentFee: paymentFee, _hiCoin: hiCoin, _cash: cash, _bd: bd,
     };
   });
 
-  const totalIncl = items.reduce((s, i) => s.plus(money(i.price)), ZERO);
+  const totalIncl = products.reduce((s, p) => s.plus(money(p.price)), ZERO);
+  const totalHiCoin = products.reduce((s, p) => s.plus(money(p.hiCoin)), ZERO);
+  const totalCash = moneySub(totalIncl, totalHiCoin).plus(money(shipping));
   const totalBd = taxInclToBreakdown(totalIncl);
-  const totalHiCoin = money(hiCoinPerItem * items.length);
-  const totalCash = moneySub(totalIncl, totalHiCoin);
   const shippingAmt = money(shipping);
 
   const order = await prisma.order.create({
@@ -80,19 +87,21 @@ async function createOrder(type: "cash" | "hicoin") {
       id: `${id}-ord`, orderNumber: `ORD-${id}`, merchantId: m.id,
       totalAmountTaxIncl: moneyToString(totalBd.taxIncl), totalAmountTaxExcl: moneyToString(totalBd.taxExcl), totalTaxAmount: moneyToString(totalBd.taxAmount),
       shippingFeeTaxIncl: moneyToString(shippingAmt), shippingFeeTaxExcl: moneyToString(shippingAmt), shippingTaxAmount: "0",
+      paymentMethod: isInstallment ? "信用卡分期" : "信用卡一次付清",
       paymentFee: "0", paidAt: new Date(),
       items: { create: orderItemsData.map(({ _commission, _paymentFee, _hiCoin, _cash, _bd, ...rest }) => rest) },
     },
     include: { items: true },
   });
 
-  // Create settlement items (IN_APPRECIATION_PERIOD)
-  const siIds: string[] = [];
+  // Create settlement items
+  const siList: Array<{ siId: string; netAmount: typeof ZERO; settlementBase: typeof ZERO; platformSubsidy: typeof ZERO; oiId: string; productName: string }> = [];
+
   for (let i = 0; i < order.items.length; i++) {
     const oi = order.items[i];
     const extra = orderItemsData[i];
     const productAmt = extra._bd.taxIncl;
-    const itemShipping = i === 0 ? shippingAmt : ZERO; // shipping only on first item
+    const itemShipping = i === 0 ? shippingAmt : ZERO;
     const commission = extra._commission;
     const paymentFee = extra._paymentFee;
     const hiCoin = extra._hiCoin;
@@ -101,9 +110,12 @@ async function createOrder(type: "cash" | "hicoin") {
     const netAmount = moneyRound(settlementBase.plus(platformSubsidy));
     const netBd = taxInclToBreakdown(netAmount);
 
+    const isPending = params.l4 === "pending";
+    const status = isPending ? SettlementItemStatus.IN_APPRECIATION_PERIOD : SettlementItemStatus.AVAILABLE_FOR_PAYOUT;
+
     const si = await prisma.settlementItem.create({
       data: {
-        orderItemId: oi.id, merchantId: m.id, status: SettlementItemStatus.IN_APPRECIATION_PERIOD,
+        orderItemId: oi.id, merchantId: m.id, status,
         productAmount: moneyToString(productAmt), shippingAmount: moneyToString(itemShipping),
         commissionAmount: moneyToString(commission), commissionRate: moneyToString(money(commRate)),
         paymentFeeAmount: moneyToString(paymentFee),
@@ -113,218 +125,144 @@ async function createOrder(type: "cash" | "hicoin") {
         taxIncludedAmount: moneyToString(productAmt), taxExcludedAmount: moneyToString(extra._bd.taxExcl),
         itemAmountTaxIncl: moneyToString(productAmt), itemAmountTaxExcl: moneyToString(extra._bd.taxExcl), itemTaxAmount: moneyToString(extra._bd.taxAmount),
         netAmountTaxIncl: moneyToString(netBd.taxIncl), netAmountTaxExcl: moneyToString(netBd.taxExcl), netTaxAmount: moneyToString(netBd.taxAmount),
-        paidAt: new Date(), shippedAt: addDays(new Date(), -1), deliveredAt: new Date(),
-        appreciationEndsAt: addDays(new Date(), 7),
+        paidAt: new Date(), shippedAt: addDays(new Date(), -1), deliveredAt: isPending ? new Date() : addDays(new Date(), -8),
+        appreciationEndsAt: isPending ? addDays(new Date(), 7) : addDays(new Date(), -1),
+        settledAt: isPending ? null : new Date(),
       },
     });
 
-    // Ledger: pending
-    await LedgerService.createEntry(TX(), {
-      walletId: m.wallet!.id, bucket: WalletBucket.PENDING,
-      entryType: LedgerEntryType.ORDER_PENDING_SETTLEMENT,
-      amount: netBd.taxIncl, amountTaxIncl: netBd.taxIncl, amountTaxExcl: netBd.taxExcl, taxAmount: netBd.taxAmount,
-      referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-      idempotencyKey: `sim-pend-${si.id}`, description: `待結算: ${oi.productName}`,
-    });
-    siIds.push(si.id);
+    // Ledger
+    if (isPending) {
+      await LedgerService.createEntry(TX(), {
+        walletId: m.wallet!.id, bucket: WalletBucket.PENDING,
+        entryType: LedgerEntryType.ORDER_PENDING_SETTLEMENT,
+        amount: netBd.taxIncl, amountTaxIncl: netBd.taxIncl, amountTaxExcl: netBd.taxExcl, taxAmount: netBd.taxAmount,
+        referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
+        idempotencyKey: `sim-pend-${si.id}`, description: `待結算: ${oi.productName}`,
+      });
+    } else {
+      const settlBd = taxInclToBreakdown(settlementBase);
+      await LedgerService.createEntry(TX(), {
+        walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.SETTLEMENT_RELEASED,
+        amount: settlBd.taxIncl, amountTaxIncl: settlBd.taxIncl, amountTaxExcl: settlBd.taxExcl, taxAmount: settlBd.taxAmount,
+        referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
+        idempotencyKey: `sim-settle-${si.id}`, description: `結算入帳: ${oi.productName}`,
+      });
+      if (!platformSubsidy.isZero()) {
+        const psBd = taxInclToBreakdown(platformSubsidy);
+        await LedgerService.createEntry(TX(), {
+          walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
+          entryType: LedgerEntryType.HI_COIN_PLATFORM_SUBSIDY, amount: psBd.taxIncl,
+          amountTaxIncl: psBd.taxIncl, amountTaxExcl: psBd.taxExcl, taxAmount: psBd.taxAmount,
+          referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
+          idempotencyKey: `sim-hcsub-${si.id}`, description: `平台嗨幣補貼 ${platformSubsidy}`,
+        });
+      }
+    }
+
+    siList.push({ siId: si.id, netAmount, settlementBase, platformSubsidy, oiId: oi.id, productName: oi.productName });
   }
 
+  // === L4: Execute final state ===
+  const details: string[] = [];
+  let consumerRefund = { cash: ZERO, hiCoin: ZERO };
+
+  details.push(`訂單: ${order.orderNumber} | ${products.map(p => `${p.name} NT$${p.price}`).join(" + ")} + 運費${shipping}`);
+  details.push(`付款: ${isHiCoin ? `台幣${totalCash} + 嗨幣${totalHiCoin}` : `台幣${totalCash}`} | ${isInstallment ? "信用卡分期" : "信用卡一次付清"} | 金流費率 ${(payFeeRate * 100).toFixed(1)}%`);
+  details.push(`費用拆解: ${siList.map(s => `${s.productName}: 淨額${s.netAmount}`).join(" / ")}`);
+
+  switch (params.l4) {
+    case "settled":
+      details.push(`✅ 鑑賞期已過，結算入帳至商家 Available`);
+      break;
+
+    case "pending":
+      details.push(`⏳ 鑑賞期中，款項在 Pending，7天後可結算`);
+      break;
+
+    case "dispute": {
+      const freezeAmt = 500;
+      const d = await prisma.disputeCase.create({
+        data: { caseNumber: `DSP-${uid()}`, merchantId: m.id, orderId: order.id, disputeReason: "商品瑕疵爭議",
+          disputeAmountTaxIncl: moneyToString(money(freezeAmt)), disputeAmountTaxExcl: moneyToString(taxInclToBreakdown(freezeAmt).taxExcl), disputeTaxAmount: moneyToString(taxInclToBreakdown(freezeAmt).taxAmount),
+          status: DisputeStatus.PARTIALLY_FROZEN },
+      });
+      await DisputeService.freezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id, amountTaxIncl: String(freezeAmt) });
+      details.push(`⚠️ 爭議中: ${d.caseNumber}，凍結 NT$${freezeAmt}（僅爭議金額）`);
+      break;
+    }
+
+    case "full_refund": {
+      for (const s of siList) {
+        const oi = order.items.find(o => o.id === s.oiId)!;
+        const hiCoin = money(oi.hiCoinAmount.toString());
+        const debitBd = taxInclToBreakdown(s.settlementBase);
+        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: s.oiId, idempotencyKey: `sim-ref-${s.oiId}`, description: `全額退款: ${s.productName}` });
+        if (!s.platformSubsidy.isZero()) {
+          const hcBd = taxInclToBreakdown(s.platformSubsidy);
+          await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: s.oiId, idempotencyKey: `sim-ref-hc-${s.oiId}`, description: `收回嗨幣補貼` });
+        }
+        await prisma.settlementItem.update({ where: { id: s.siId }, data: { status: SettlementItemStatus.REFUNDED } });
+        consumerRefund.cash = consumerRefund.cash.plus(money(oi.cashAmount.toString()));
+        consumerRefund.hiCoin = consumerRefund.hiCoin.plus(hiCoin);
+      }
+      consumerRefund.cash = consumerRefund.cash.plus(shippingAmt);
+      details.push(`🔄 全額退款: 退消費者台幣 ${consumerRefund.cash} + 嗨幣 ${consumerRefund.hiCoin}`);
+      break;
+    }
+
+    case "negotiated":
+    case "adjudicated": {
+      const amount = params.refundAmount || 1000;
+      const isAdjudicated = params.l4 === "adjudicated";
+      const label = isAdjudicated ? "平台裁決退款" : "協商退款";
+      const totalOriginal = products.reduce((s, p) => s.plus(money(p.price)), ZERO);
+      const ratio = money(amount).dividedBy(totalOriginal);
+      const hiCoinRefund = isHiCoin ? moneyRound(moneyMul(totalHiCoin, ratio)) : ZERO;
+      const cashRefund = moneyRound(moneySub(money(amount), hiCoinRefund));
+      // Debit from merchant
+      const firstSi = siList[0];
+      const commReturn = moneyCeil(moneyMul(money(products[0].price).dividedBy(totalOriginal).times(money(amount)), commRate));
+      const merchantDebit = moneyRound(moneySub(money(amount), commReturn));
+      const debitBd = taxInclToBreakdown(merchantDebit);
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: firstSi.oiId, idempotencyKey: `sim-neg-${firstSi.oiId}`, description: `${label} NT$${amount}` });
+      await prisma.settlementItem.update({ where: { id: firstSi.siId }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
+      consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
+      details.push(`🤝 ${label}: 退消費者 NT$${amount} (台幣${cashRefund} + 嗨幣${hiCoinRefund})${isAdjudicated ? " [平台裁決]" : ""}`);
+      break;
+    }
+
+    case "partial_return": {
+      if (siList.length < 2) { details.push("⚠️ 單商品不支援部分退貨"); break; }
+      const returnItem = siList[0];
+      const oi = order.items.find(o => o.id === returnItem.oiId)!;
+      const hiCoin = money(oi.hiCoinAmount.toString());
+      const debitBd = taxInclToBreakdown(returnItem.settlementBase);
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: returnItem.oiId, idempotencyKey: `sim-partret-${returnItem.oiId}`, description: `部分退貨: ${returnItem.productName}` });
+      if (!returnItem.platformSubsidy.isZero()) {
+        const hcBd = taxInclToBreakdown(returnItem.platformSubsidy);
+        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: returnItem.oiId, idempotencyKey: `sim-partret-hc-${returnItem.oiId}`, description: `收回嗨幣補貼` });
+      }
+      await prisma.settlementItem.update({ where: { id: returnItem.siId }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
+      consumerRefund = { cash: money(oi.cashAmount.toString()), hiCoin };
+      details.push(`📦 部分退貨: 退 ${returnItem.productName} NT$${oi.subtotalTaxIncl}，退消費者台幣${consumerRefund.cash} + 嗨幣${consumerRefund.hiCoin}`);
+      break;
+    }
+  }
+
+  const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
+  details.push(`商家 wallet: Pending ${bal.pending} | Available ${bal.available} | Reserved ${bal.reserved}`);
+
   return {
-    orderId: order.id, orderNumber: order.orderNumber, siIds,
-    totalCash: totalCash.plus(shippingAmt).toString(), totalHiCoin: totalHiCoin.toString(),
-    items: items.map((it, i) => `${it.name} NT$${it.price}`).join(" + ") + ` + 運費${shipping}`,
-    consumerDebit: { cash: totalCash.plus(shippingAmt).toString(), hiCoin: totalHiCoin.toString() },
+    orderNumber: order.orderNumber,
+    details: details.join("\n"),
+    consumerDebit: { cash: totalCash.toString(), hiCoin: totalHiCoin.toString() },
+    consumerRefund: { cash: consumerRefund.cash.toString(), hiCoin: consumerRefund.hiCoin.toString() },
   };
 }
 
-// ================================================================
-// L2: Change order state
-// ================================================================
-async function settleOrder(orderId: string) {
-  const m = await getMerchantA();
-  const items = await prisma.settlementItem.findMany({
-    where: { orderItem: { orderId }, status: SettlementItemStatus.IN_APPRECIATION_PERIOD },
-    include: { orderItem: true },
-  });
-  if (items.length === 0) return { message: "無可結算項目" };
-
-  for (const si of items) {
-    const netBd = taxInclToBreakdown(money(si.netSettlementAmount.toString()));
-    const settlementBase = moneyRound(money(si.netSettlementAmount.toString()).minus(money(si.platformSubsidyAmount.toString())));
-    const settlBd = taxInclToBreakdown(settlementBase);
-    const platformSubsidy = money(si.platformSubsidyAmount.toString());
-
-    // Move pending → available (base)
-    await LedgerService.createEntry(TX(), {
-      walletId: m.wallet!.id, bucket: WalletBucket.PENDING,
-      entryType: LedgerEntryType.SETTLEMENT_RELEASED, amount: netBd.taxIncl.negated(),
-      amountTaxIncl: netBd.taxIncl.negated(), amountTaxExcl: netBd.taxExcl.negated(), taxAmount: netBd.taxAmount.negated(),
-      referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-      idempotencyKey: `sim-rel-p-${si.id}`, description: "結算: pending 扣除",
-    });
-    await LedgerService.createEntry(TX(), {
-      walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
-      entryType: LedgerEntryType.SETTLEMENT_RELEASED, amount: settlBd.taxIncl,
-      amountTaxIncl: settlBd.taxIncl, amountTaxExcl: settlBd.taxExcl, taxAmount: settlBd.taxAmount,
-      referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-      idempotencyKey: `sim-rel-a-${si.id}`, description: `結算入帳: ${si.orderItem.productName}`,
-    });
-    if (!platformSubsidy.isZero()) {
-      const psBd = taxInclToBreakdown(platformSubsidy);
-      await LedgerService.createEntry(TX(), {
-        walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
-        entryType: LedgerEntryType.HI_COIN_PLATFORM_SUBSIDY, amount: psBd.taxIncl,
-        amountTaxIncl: psBd.taxIncl, amountTaxExcl: psBd.taxExcl, taxAmount: psBd.taxAmount,
-        referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-        idempotencyKey: `sim-hcsub-${si.id}`, description: `平台嗨幣補貼 ${platformSubsidy}`,
-      });
-    }
-    // Reserve
-    if (m.reserveRules.length > 0) {
-      const pct = money(m.reserveRules[0].reservePercent.toString());
-      const resAmt = moneyRound(moneyMul(money(si.netSettlementAmount.toString()), pct));
-      if (!resAmt.isZero()) {
-        const rb = taxInclToBreakdown(resAmt);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.RESERVE_HOLD, amount: rb.taxIncl.negated(), amountTaxIncl: rb.taxIncl.negated(), amountTaxExcl: rb.taxExcl.negated(), taxAmount: rb.taxAmount.negated(), referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id, idempotencyKey: `sim-res-a-${si.id}`, description: "Reserve 扣留" });
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.RESERVED, entryType: LedgerEntryType.RESERVE_HOLD, amount: rb.taxIncl, amountTaxIncl: rb.taxIncl, amountTaxExcl: rb.taxExcl, taxAmount: rb.taxAmount, referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id, idempotencyKey: `sim-res-r-${si.id}`, description: "Reserve 入帳" });
-        await prisma.settlementItem.update({ where: { id: si.id }, data: { reserveAmount: moneyToString(resAmt) } });
-      }
-    }
-    await prisma.settlementItem.update({
-      where: { id: si.id },
-      data: { status: SettlementItemStatus.AVAILABLE_FOR_PAYOUT, settledAt: new Date(), deliveredAt: addDays(new Date(), -8), appreciationEndsAt: addDays(new Date(), -1) },
-    });
-  }
-  const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-  return { message: `結算完成，${items.length} 筆入帳。Available: ${bal.available}`, merchantAvailable: bal.available.toString() };
-}
-
-// ================================================================
-// L3: Operations
-// ================================================================
-async function runL3(action: string, orderId: string) {
-  const m = await getMerchantA();
-  const orderItems = await prisma.orderItem.findMany({ where: { orderId }, include: { settlementItem: true } });
-  if (orderItems.length === 0) return { error: "訂單不存在" };
-
-  switch (action) {
-    // --- Refund in appreciation period ---
-    case "refund_in_appreciation": {
-      const totalRefund = orderItems.reduce((s, oi) => s.plus(money(oi.subtotalTaxIncl.toString())), ZERO);
-      const totalHiCoin = orderItems.reduce((s, oi) => s.plus(money(oi.hiCoinAmount.toString())), ZERO);
-      const totalCash = moneySub(totalRefund, totalHiCoin);
-      // Remove from pending
-      for (const oi of orderItems) {
-        if (oi.settlementItem) {
-          const net = money(oi.settlementItem.netSettlementAmount.toString());
-          const netBd = taxInclToBreakdown(net);
-          await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.PENDING, entryType: LedgerEntryType.REFUND_DEBIT, amount: netBd.taxIncl.negated(), amountTaxIncl: netBd.taxIncl.negated(), amountTaxExcl: netBd.taxExcl.negated(), taxAmount: netBd.taxAmount.negated(), referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: oi.settlementItem.id, idempotencyKey: `sim-refpend-${oi.settlementItem.id}`, description: "鑑賞期內退款，取消待結算" });
-          await prisma.settlementItem.update({ where: { id: oi.settlementItem.id }, data: { status: SettlementItemStatus.REFUNDED } });
-        }
-      }
-      return { message: `鑑賞期內退款完成。退消費者: 台幣${totalCash} + 嗨幣${totalHiCoin}`, consumerRefund: { cash: totalCash.toString(), hiCoin: totalHiCoin.toString() } };
-    }
-
-    // --- Partial refund (退第一件) ---
-    case "partial_refund": {
-      const oi = orderItems[0];
-      const refundAmt = money(oi.subtotalTaxIncl.toString());
-      const hiCoinRefund = money(oi.hiCoinAmount.toString());
-      const cashRefund = moneySub(refundAmt, hiCoinRefund);
-      const comm = moneyCeil(money(oi.platformCommission.toString()));
-      const si = oi.settlementItem!;
-      const settlementBase = moneyRound(money(si.netSettlementAmount.toString()).minus(money(si.platformSubsidyAmount.toString())));
-      // Debit settlement base
-      const debitBd = taxInclToBreakdown(settlementBase);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-partref-${oi.id}`, description: `部分退貨: ${oi.productName}` });
-      if (!hiCoinRefund.isZero()) {
-        const hcBd = taxInclToBreakdown(hiCoinRefund);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-partref-hc-${oi.id}`, description: `收回嗨幣補貼 ${hiCoinRefund}` });
-      }
-      await prisma.settlementItem.update({ where: { id: si.id }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `部分退貨: ${oi.productName} NT$${refundAmt}。退消費者台幣${cashRefund}+嗨幣${hiCoinRefund}。抽成${comm}退還，金流費不退。商家Available: ${bal.available}`, consumerRefund: { cash: cashRefund.toString(), hiCoin: hiCoinRefund.toString() } };
-    }
-
-    // --- Full refund ---
-    case "full_refund": {
-      let totalCashRefund = ZERO, totalHiCoinRefund = ZERO;
-      for (const oi of orderItems) {
-        const si = oi.settlementItem!;
-        const hiCoin = money(oi.hiCoinAmount.toString());
-        const cash = money(oi.cashAmount.toString());
-        totalCashRefund = totalCashRefund.plus(cash);
-        totalHiCoinRefund = totalHiCoinRefund.plus(hiCoin);
-        const settlementBase = moneyRound(money(si.netSettlementAmount.toString()).minus(money(si.platformSubsidyAmount.toString())));
-        const debitBd = taxInclToBreakdown(settlementBase);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-fullref-${oi.id}`, description: `全額退款: ${oi.productName}` });
-        if (!hiCoin.isZero()) {
-          const hcBd = taxInclToBreakdown(hiCoin);
-          await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-fullref-hc-${oi.id}`, description: `收回嗨幣補貼 ${hiCoin}` });
-        }
-        await prisma.settlementItem.update({ where: { id: si.id }, data: { status: SettlementItemStatus.REFUNDED } });
-      }
-      // Add shipping refund
-      const shippingRefund = money((await prisma.order.findUnique({ where: { id: orderId } }))!.shippingFeeTaxIncl.toString());
-      totalCashRefund = totalCashRefund.plus(shippingRefund);
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `全額退款完成。退消費者台幣${totalCashRefund}+嗨幣${totalHiCoinRefund}。商家Available: ${bal.available}`, consumerRefund: { cash: totalCashRefund.toString(), hiCoin: totalHiCoinRefund.toString() } };
-    }
-
-    // --- Negotiated refund (協商退款 1000) ---
-    case "negotiated_refund": {
-      const negotiatedAmount = 1000;
-      const oi = orderItems[0];
-      const si = oi.settlementItem!;
-      const hiCoin = money(oi.hiCoinAmount.toString());
-      // Proportion of negotiated to original
-      const originalAmt = money(oi.subtotalTaxIncl.toString());
-      const ratio = money(negotiatedAmount).dividedBy(originalAmt);
-      const hiCoinPortion = moneyRound(moneyMul(hiCoin, ratio));
-      const cashPortion = moneyRound(moneySub(money(negotiatedAmount), hiCoinPortion));
-      const comm = moneyCeil(moneyMul(money(oi.platformCommission.toString()), ratio));
-      // Debit from merchant: negotiatedAmount - commission (payment fee not returned)
-      const merchantDebit = moneyRound(moneySub(money(negotiatedAmount), comm));
-      const debitBd = taxInclToBreakdown(merchantDebit);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: oi.id, idempotencyKey: `sim-negref-${oi.id}`, description: `協商退款 NT$${negotiatedAmount}` });
-      await prisma.settlementItem.update({ where: { id: si.id }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `協商退款: 退消費者 NT$${negotiatedAmount} (台幣${cashPortion}+嗨幣${hiCoinPortion})。抽成退${comm}，金流費不退。商家Available: ${bal.available}`, consumerRefund: { cash: cashPortion.toString(), hiCoin: hiCoinPortion.toString() } };
-    }
-
-    // --- Dispute freeze → resolve ---
-    case "dispute_resolve": {
-      const freezeAmt = 500;
-      const d = await prisma.disputeCase.create({ data: { caseNumber: `DSP-${uid()}`, merchantId: m.id, orderId, disputeReason: "商品瑕疵爭議", disputeAmountTaxIncl: moneyToString(money(freezeAmt)), disputeAmountTaxExcl: moneyToString(taxInclToBreakdown(freezeAmt).taxExcl), disputeTaxAmount: moneyToString(taxInclToBreakdown(freezeAmt).taxAmount), status: DisputeStatus.OPENED } });
-      await DisputeService.freezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id, amountTaxIncl: String(freezeAmt) });
-      await prisma.disputeCase.update({ where: { id: d.id }, data: { status: DisputeStatus.PARTIALLY_FROZEN } });
-      await DisputeService.unfreezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id });
-      await prisma.disputeCase.update({ where: { id: d.id }, data: { status: DisputeStatus.RESOLVED, resolution: "商家勝訴", resolvedAt: new Date() } });
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `爭議 ${d.caseNumber}: 凍結 NT$${freezeAmt} → 商家勝訴 → 解凍回 Available。商家Available: ${bal.available}` };
-    }
-
-    // --- Dispute freeze → debit ---
-    case "dispute_debit": {
-      const freezeAmt = 500;
-      const d = await prisma.disputeCase.create({ data: { caseNumber: `DSP-${uid()}`, merchantId: m.id, orderId, disputeReason: "商品嚴重瑕疵", disputeAmountTaxIncl: moneyToString(money(freezeAmt)), disputeAmountTaxExcl: moneyToString(taxInclToBreakdown(freezeAmt).taxExcl), disputeTaxAmount: moneyToString(taxInclToBreakdown(freezeAmt).taxAmount), status: DisputeStatus.OPENED } });
-      await DisputeService.freezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id, amountTaxIncl: String(freezeAmt) });
-      await DisputeService.debitDisputedAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id });
-      await prisma.disputeCase.update({ where: { id: d.id }, data: { status: DisputeStatus.REJECTED, resolution: "商家敗訴", resolvedAt: new Date() } });
-      const bal = await LedgerService.getBalances(TX(), m.wallet!.id);
-      return { message: `爭議 ${d.caseNumber}: 凍結 NT$${freezeAmt} → 商家敗訴 → 永久扣回。商家Available: ${bal.available}` };
-    }
-
-    // (提領/Reserve/負餘額/手動調整 已移至商家後台操作)
-
-    default:
-      return { error: `未知操作: ${action}` };
-  }
-}
-
-// ================================================================
 // Reset
-// ================================================================
 async function resetAll() {
   await prisma.monthlyStatementItem.deleteMany();
   await prisma.monthlyStatement.deleteMany();
@@ -357,20 +295,15 @@ async function resetAll() {
   return { message: "已重置" };
 }
 
-// ================================================================
-// Router
-// ================================================================
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { action, type, orderId } = body;
-
-    if (action === "reset") return NextResponse.json({ success: true, ...(await resetAll()) });
-    if (action === "create_order") return NextResponse.json({ success: true, ...(await createOrder(type)) });
-    if (action === "settle") return NextResponse.json({ success: true, ...(await settleOrder(orderId)) });
-    if (action && orderId) return NextResponse.json({ success: true, ...(await runL3(action, orderId)) });
-
-    return NextResponse.json({ success: false, message: "Missing action" }, { status: 400 });
+    if (body.action === "reset") return NextResponse.json({ success: true, ...(await resetAll()) });
+    if (body.action === "execute") {
+      const result = await execute(body);
+      return NextResponse.json({ success: true, ...result });
+    }
+    return NextResponse.json({ success: false, message: "Unknown action" }, { status: 400 });
   } catch (error) {
     console.error("Simulator error:", error);
     return NextResponse.json({ success: false, message: error instanceof Error ? error.message : "失敗" }, { status: 500 });
