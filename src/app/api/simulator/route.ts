@@ -95,7 +95,7 @@ async function execute(params: ExecuteParams) {
   });
 
   // Create settlement items
-  const siList: Array<{ siId: string; netAmount: typeof ZERO; settlementBase: typeof ZERO; platformSubsidy: typeof ZERO; oiId: string; productName: string }> = [];
+  const siList: Array<{ siId: string; netAmount: typeof ZERO; platformSubsidy: typeof ZERO; oiId: string; productName: string }> = [];
 
   for (let i = 0; i < order.items.length; i++) {
     const oi = order.items[i];
@@ -105,9 +105,9 @@ async function execute(params: ExecuteParams) {
     const commission = extra._commission;
     const paymentFee = extra._paymentFee;
     const hiCoin = extra._hiCoin;
-    const platformSubsidy = hiCoin.isZero() ? ZERO : hiCoin;
-    const settlementBase = moneyRound(productAmt.plus(itemShipping).minus(commission).minus(paymentFee));
-    const netAmount = moneyRound(settlementBase.plus(platformSubsidy));
+    const platformSubsidy = hiCoin.isZero() ? ZERO : hiCoin; // 記錄用，不影響商家淨額
+    // 商家淨額 = 商品 + 運費 - 抽成 - 金流費（不管消費者用什麼付，商家拿到一樣多）
+    const netAmount = moneyRound(productAmt.plus(itemShipping).minus(commission).minus(paymentFee));
     const netBd = taxInclToBreakdown(netAmount);
 
     const isPending = params.l4 === "pending";
@@ -121,7 +121,7 @@ async function execute(params: ExecuteParams) {
         paymentFeeAmount: moneyToString(paymentFee),
         hiCoinRedeemedAmount: moneyToString(hiCoin), platformSubsidyAmount: moneyToString(platformSubsidy),
         cashPaidAmount: moneyToString(extra._cash), netSettlementAmount: moneyToString(netAmount),
-        grossSettlementAmount: moneyToString(productAmt.plus(itemShipping).plus(platformSubsidy)),
+        grossSettlementAmount: moneyToString(productAmt.plus(itemShipping)),
         taxIncludedAmount: moneyToString(productAmt), taxExcludedAmount: moneyToString(extra._bd.taxExcl),
         itemAmountTaxIncl: moneyToString(productAmt), itemAmountTaxExcl: moneyToString(extra._bd.taxExcl), itemTaxAmount: moneyToString(extra._bd.taxAmount),
         netAmountTaxIncl: moneyToString(netBd.taxIncl), netAmountTaxExcl: moneyToString(netBd.taxExcl), netTaxAmount: moneyToString(netBd.taxAmount),
@@ -141,27 +141,19 @@ async function execute(params: ExecuteParams) {
         idempotencyKey: `sim-pend-${si.id}`, description: `待結算: ${oi.productName}`,
       });
     } else {
-      const settlBd = taxInclToBreakdown(settlementBase);
+      // 商家入帳 = netAmount（不管消費者用台幣或嗨幣，商家拿到一樣多）
+      // 嗨幣補貼是平台內部帳，不另外入 wallet
       await LedgerService.createEntry(TX(), {
         walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
         entryType: LedgerEntryType.SETTLEMENT_RELEASED,
-        amount: settlBd.taxIncl, amountTaxIncl: settlBd.taxIncl, amountTaxExcl: settlBd.taxExcl, taxAmount: settlBd.taxAmount,
+        amount: netBd.taxIncl, amountTaxIncl: netBd.taxIncl, amountTaxExcl: netBd.taxExcl, taxAmount: netBd.taxAmount,
         referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-        idempotencyKey: `sim-settle-${si.id}`, description: `結算入帳: ${oi.productName}`,
+        idempotencyKey: `sim-settle-${si.id}`,
+        description: `結算入帳: ${oi.productName}${!platformSubsidy.isZero() ? ` (含嗨幣補貼${platformSubsidy})` : ""}`,
       });
-      if (!platformSubsidy.isZero()) {
-        const psBd = taxInclToBreakdown(platformSubsidy);
-        await LedgerService.createEntry(TX(), {
-          walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
-          entryType: LedgerEntryType.HI_COIN_PLATFORM_SUBSIDY, amount: psBd.taxIncl,
-          amountTaxIncl: psBd.taxIncl, amountTaxExcl: psBd.taxExcl, taxAmount: psBd.taxAmount,
-          referenceType: ReferenceType.SETTLEMENT_ITEM, referenceId: si.id,
-          idempotencyKey: `sim-hcsub-${si.id}`, description: `平台嗨幣補貼 ${platformSubsidy}`,
-        });
-      }
     }
 
-    siList.push({ siId: si.id, netAmount, settlementBase, platformSubsidy, oiId: oi.id, productName: oi.productName });
+    siList.push({ siId: si.id, netAmount, platformSubsidy, oiId: oi.id, productName: oi.productName });
   }
 
   // === L4: Execute final state ===
@@ -171,10 +163,10 @@ async function execute(params: ExecuteParams) {
   details.push(`📋 訂單: ${order.orderNumber}`);
   details.push(`   商品: ${products.map(p => `${p.name} NT$${p.price}${p.hiCoin > 0 ? `(嗨幣${p.hiCoin})` : ""}`).join(" + ")} + 運費${shipping}`);
   details.push(`   付款: ${isHiCoin ? `台幣${totalCash} + 嗨幣${totalHiCoin}` : `台幣${totalCash}`} | ${isInstallment ? "信用卡分期" : "一次付清"} | 金流費${(payFeeRate * 100).toFixed(1)}%`);
-  for (const s of siList) {
+  siList.forEach((s, idx) => {
     const extra = orderItemsData.find(e => e.productName === s.productName)!;
-    details.push(`   ${s.productName}: 商品${extra._bd.taxIncl} - 抽成${extra._commission} - 金流費${extra._paymentFee}${!s.platformSubsidy.isZero() ? ` + 補貼${s.platformSubsidy}` : ""} = 淨額${s.netAmount}`);
-  }
+    details.push(`   ${s.productName}: 商品${extra._bd.taxIncl}${idx === 0 ? ` + 運費${shipping}` : ""} - 抽成${extra._commission} - 金流費${extra._paymentFee} = 淨額${s.netAmount}${!s.platformSubsidy.isZero() ? ` (嗨幣${s.platformSubsidy}由平台補貼)` : ""}`);
+  });
 
   switch (params.l4) {
     case "settled":
@@ -201,17 +193,15 @@ async function execute(params: ExecuteParams) {
       for (const s of siList) {
         const oi = order.items.find(o => o.id === s.oiId)!;
         const hiCoin = money(oi.hiCoinAmount.toString());
-        const debitBd = taxInclToBreakdown(s.settlementBase);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: s.oiId, idempotencyKey: `sim-ref-${s.oiId}`, description: `全額退款: ${s.productName}` });
-        if (!s.platformSubsidy.isZero()) {
-          const hcBd = taxInclToBreakdown(s.platformSubsidy);
-          await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: s.oiId, idempotencyKey: `sim-ref-hc-${s.oiId}`, description: `收回嗨幣補貼` });
-        }
+        // 扣回商家淨額（= 結算時入帳的金額）
+        const debitBd = taxInclToBreakdown(s.netAmount);
+        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: s.oiId, idempotencyKey: `sim-ref-${s.oiId}`, description: `全額退款: ${s.productName} 扣回${s.netAmount}` });
         await prisma.settlementItem.update({ where: { id: s.siId }, data: { status: SettlementItemStatus.REFUNDED } });
+        // 消費者退回：台幣退台幣、嗨幣退嗨幣
         consumerRefund.cash = consumerRefund.cash.plus(money(oi.cashAmount.toString()));
         consumerRefund.hiCoin = consumerRefund.hiCoin.plus(hiCoin);
       }
-      consumerRefund.cash = consumerRefund.cash.plus(shippingAmt);
+      consumerRefund.cash = consumerRefund.cash.plus(shippingAmt); // 運費也退
       details.push(`🔄 全額退款: 退消費者台幣 ${consumerRefund.cash} + 嗨幣 ${consumerRefund.hiCoin}`);
       break;
     }
@@ -224,30 +214,22 @@ async function execute(params: ExecuteParams) {
       const totalProductAmt = products.reduce((s, p) => s.plus(money(p.price)), ZERO);
       const ratio = money(amount).dividedBy(totalProductAmt);
 
-      // 按比例計算各項
-      const totalSettlementBase = siList.reduce((s, si) => s.plus(si.settlementBase), ZERO);
-      const totalSubsidy = siList.reduce((s, si) => s.plus(si.platformSubsidy), ZERO);
-      const settlementDebit = moneyRound(moneyMul(totalSettlementBase, ratio));
-      const subsidyDebit = moneyRound(moneyMul(totalSubsidy, ratio));
+      // 按比例扣回商家淨額
+      const totalNetAmount = siList.reduce((s, si) => s.plus(si.netAmount), ZERO);
+      const merchantDebit = moneyRound(moneyMul(totalNetAmount, ratio));
 
-      // 消費者退款拆分
+      // 消費者退款拆分（台幣退台幣、嗨幣退嗨幣）
       const hiCoinRefund = isHiCoin ? moneyRound(moneyMul(totalHiCoin, ratio)) : ZERO;
       const cashRefund = moneyRound(moneySub(money(amount), hiCoinRefund));
 
-      // 商家扣回: 結算部分
-      const debitBd = taxInclToBreakdown(settlementDebit);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: siList[0].oiId, idempotencyKey: `sim-neg-${siList[0].oiId}`, description: `${label}: 扣回結算 ${settlementDebit}` });
-
-      // 商家扣回: 嗨幣補貼
-      if (!subsidyDebit.isZero()) {
-        const subBd = taxInclToBreakdown(subsidyDebit);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: subBd.taxIncl.negated(), amountTaxIncl: subBd.taxIncl.negated(), amountTaxExcl: subBd.taxExcl.negated(), taxAmount: subBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: siList[0].oiId, idempotencyKey: `sim-neg-hc-${siList[0].oiId}`, description: `${label}: 收回補貼 ${subsidyDebit}` });
-      }
+      // 商家扣回
+      const debitBd = taxInclToBreakdown(merchantDebit);
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: siList[0].oiId, idempotencyKey: `sim-neg-${siList[0].oiId}`, description: `${label} NT$${amount}: 扣回${merchantDebit}` });
 
       await prisma.settlementItem.update({ where: { id: siList[0].siId }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
       consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
-      details.push(`🤝 ${label}: 退消費者 NT$${amount} (台幣${cashRefund} + 嗨幣${hiCoinRefund})`);
-      details.push(`   商家扣回: 結算${settlementDebit}${!subsidyDebit.isZero() ? ` + 補貼${subsidyDebit}` : ""} = 共${settlementDebit.plus(subsidyDebit)}${isAdjudicated ? " [平台裁決]" : ""}`);
+      details.push(`🤝 ${label}: 退消費者 NT$${amount} (台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""})`);
+      details.push(`   商家扣回: ${merchantDebit}（按比例: ${amount}/${totalProductAmt} × 淨額${totalNetAmount}）${isAdjudicated ? " [平台裁決]" : ""}`);
       break;
     }
 
@@ -256,15 +238,13 @@ async function execute(params: ExecuteParams) {
       const returnItem = siList[0];
       const oi = order.items.find(o => o.id === returnItem.oiId)!;
       const hiCoin = money(oi.hiCoinAmount.toString());
-      const debitBd = taxInclToBreakdown(returnItem.settlementBase);
-      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: returnItem.oiId, idempotencyKey: `sim-partret-${returnItem.oiId}`, description: `部分退貨: ${returnItem.productName}` });
-      if (!returnItem.platformSubsidy.isZero()) {
-        const hcBd = taxInclToBreakdown(returnItem.platformSubsidy);
-        await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.HI_COIN_SUBSIDY_RETURN, amount: hcBd.taxIncl.negated(), amountTaxIncl: hcBd.taxIncl.negated(), amountTaxExcl: hcBd.taxExcl.negated(), taxAmount: hcBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: returnItem.oiId, idempotencyKey: `sim-partret-hc-${returnItem.oiId}`, description: `收回嗨幣補貼` });
-      }
+      // 扣回該件商品的淨額
+      const debitBd = taxInclToBreakdown(returnItem.netAmount);
+      await LedgerService.createEntry(TX(), { walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE, entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitBd.taxIncl.negated(), amountTaxIncl: debitBd.taxIncl.negated(), amountTaxExcl: debitBd.taxExcl.negated(), taxAmount: debitBd.taxAmount.negated(), referenceType: ReferenceType.ORDER_ITEM, referenceId: returnItem.oiId, idempotencyKey: `sim-partret-${returnItem.oiId}`, description: `部分退貨: ${returnItem.productName} 扣回${returnItem.netAmount}` });
       await prisma.settlementItem.update({ where: { id: returnItem.siId }, data: { status: SettlementItemStatus.PARTIALLY_REFUNDED } });
       consumerRefund = { cash: money(oi.cashAmount.toString()), hiCoin };
-      details.push(`📦 部分退貨: 退 ${returnItem.productName} NT$${oi.subtotalTaxIncl}，退消費者台幣${consumerRefund.cash} + 嗨幣${consumerRefund.hiCoin}`);
+      details.push(`📦 部分退貨: 退 ${returnItem.productName} NT$${oi.subtotalTaxIncl}，退消費者台幣${consumerRefund.cash}${!hiCoin.isZero() ? ` + 嗨幣${hiCoin}` : ""}`);
+      details.push(`   商家扣回: ${returnItem.netAmount}`);
       break;
     }
   }
