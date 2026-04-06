@@ -128,13 +128,13 @@ export const OrderCalculationService = {
 
     for (const coupon of input.coupons) {
       const couponAmt = money(coupon.amount);
-      // Distribute coupon proportionally across items
+      // Distribute coupon proportionally, floor + tail diff to last item
       let remaining = couponAmt;
       for (let i = 0; i < items.length; i++) {
         const itemTotal = moneyMul(items[i].finalPriceBeforeHiCoin, items[i].quantity);
         const share = i === items.length - 1
           ? remaining  // last item gets remainder (尾差)
-          : moneyRound(moneyMul(couponAmt, itemTotal.dividedBy(totalFinalBeforeCoupon)));
+          : moneyMul(couponAmt, itemTotal.dividedBy(totalFinalBeforeCoupon)).floor();
         const actualShare = Decimal.min(share, remaining);
 
         if (coupon.type === "PLATFORM") {
@@ -186,16 +186,17 @@ export const OrderCalculationService = {
       }
     });
 
-    // Allocate proportionally, last gets remainder
+    // Allocate proportionally with floor, tail diff to highest amount item (PRD 5.5)
     for (let i = 0; i < items.length; i++) {
       if (totalAllocable.isZero()) break;
-      if (i === maxAmtIdx) continue; // skip max item, handle as tail
-      const share = moneyRound(moneyMul(hiCoinActual, items[i].hiCoinAllocableAmount.dividedBy(totalAllocable)));
+      if (i === maxAmtIdx) continue; // skip max item, gets remainder
+      // floor to integer — 尾差不要在這裡產生，全部留給最高金額商品
+      const share = moneyMul(hiCoinActual, items[i].hiCoinAllocableAmount.dividedBy(totalAllocable)).floor();
       const actual = Decimal.min(share, hiCoinRemaining, items[i].hiCoinAllocableAmount);
       items[i].hiCoinAllocatedAmount = actual;
       hiCoinRemaining = hiCoinRemaining.minus(actual);
     }
-    // Tail diff: max amount item gets remainder (PRD 5.5)
+    // Tail diff: highest amount item gets all remainder (PRD 5.5 尾差規則)
     items[maxAmtIdx].hiCoinAllocatedAmount = Decimal.min(hiCoinRemaining, items[maxAmtIdx].hiCoinAllocableAmount);
 
     const hiCoinTotalUsed = items.reduce((s, i) => s.plus(i.hiCoinAllocatedAmount), ZERO);
