@@ -23,6 +23,8 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   CANCELLED: { label: "已取消", color: "bg-red-100 text-red-800" },
 };
 
+export const dynamic = "force-dynamic";
+
 export default async function ReconciliationPage() {
   const session = await auth();
   if (!session?.user?.merchantId) redirect("/login");

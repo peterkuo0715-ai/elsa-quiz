@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { getPendingBankChangeRequests } from "@/server/queries/payout.queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BankApprovalList } from "./bank-approval-list";

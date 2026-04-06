@@ -1,3 +1,4 @@
+export const dynamic = "force-dynamic";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getWalletBalances, getRecentLedgerEntries } from "@/server/queries/wallet.queries";
