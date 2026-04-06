@@ -34,7 +34,7 @@ const L3_OPTIONS: Array<{ id: L3; label: string; desc: string }> = [
 const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: boolean; multiOnly?: boolean }> = [
   { id: "settled", label: "過鑑賞期", desc: "正常完成，結算入帳" },
   { id: "pending", label: "未過鑑賞期", desc: "鑑賞期中，Pending 狀態" },
-  { id: "dispute", label: "爭議中", desc: "凍結爭議金額 NT$500" },
+  { id: "dispute", label: "爭議處理中", desc: "消費者發起售後，商家應得全額凍結" },
   { id: "negotiated", label: "協商退款", desc: "雙方協議退款金額", needAmount: true },
   { id: "full_refund", label: "全額退款", desc: "全部退款，原路返回" },
   { id: "adjudicated", label: "裁決退款", desc: "平台裁決退款金額", needAmount: true },
