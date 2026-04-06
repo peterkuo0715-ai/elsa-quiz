@@ -29,6 +29,7 @@ async function getMerchantA() {
 // ================================================================
 interface ExecuteParams {
   l1: "single" | "multi";
+  lShipping: "shipping_paid" | "free_shipping";
   l2: "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
   l3: "full_pay" | "installment";
   l4: "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
@@ -65,7 +66,7 @@ async function execute(params: ExecuteParams) {
     products,
     coupons,
     hiCoinUsed,
-    shippingFees: { [m.id]: 80 },
+    shippingFees: { [m.id]: params.lShipping === "free_shipping" ? 0 : 80 },
     paymentFeeRate,
     merchantCommissions: { [m.id]: { storeRate: 0.03, categoryRate: 0.02 } },
   });

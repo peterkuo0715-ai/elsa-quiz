@@ -8,6 +8,7 @@ interface ConsumerAccount { cash: number; hiCoin: number; }
 const INITIAL: ConsumerAccount = { cash: 50000, hiCoin: 1000 };
 
 type L1 = "single" | "multi";
+type LShipping = "shipping_paid" | "free_shipping";
 type L2 = "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
 type L3 = "full_pay" | "installment";
 type L4 = "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
@@ -15,6 +16,10 @@ type L4 = "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "ad
 const L1_OPTIONS: Array<{ id: L1; label: string; desc: string }> = [
   { id: "single", label: "單商品", desc: "藍芽耳機 NT$1,400 (會員價) × 1件" },
   { id: "multi", label: "多商品", desc: "藍芽耳機 NT$1,400 + 保護殼 NT$450" },
+];
+const SHIPPING_OPTIONS: Array<{ id: LShipping; label: string; desc: string }> = [
+  { id: "shipping_paid", label: "運費外加 NT$80", desc: "消費者付運費，平台代收，歸商家" },
+  { id: "free_shipping", label: "免運", desc: "運費=0，商店吸收，不參與任何計算" },
 ];
 const L2_OPTIONS: Array<{ id: L2; label: string; desc: string }> = [
   { id: "cash", label: "純台幣", desc: "全額台幣付款" },
@@ -39,6 +44,7 @@ const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: bool
 export default function SimulatorPage() {
   const [consumer, setConsumer] = useState<ConsumerAccount>({ ...INITIAL });
   const [l1, setL1] = useState<L1 | null>(null);
+  const [lShipping, setLShipping] = useState<LShipping | null>(null);
   const [l2, setL2] = useState<L2 | null>(null);
   const [l3, setL3] = useState<L3 | null>(null);
   const [l4, setL4] = useState<L4 | null>(null);
@@ -48,7 +54,7 @@ export default function SimulatorPage() {
   const [results, setResults] = useState<Array<{ orderNumber: string; details: string }>>([]);
 
   const needsAmount = l4 === "negotiated" || l4 === "adjudicated";
-  const canExecute = l1 && l2 && l3 && l4 && (!needsAmount || Number(refundAmount) > 0);
+  const canExecute = l1 && lShipping && l2 && l3 && l4 && (!needsAmount || Number(refundAmount) > 0);
 
   async function handleExecute() {
     if (!canExecute) return;
@@ -57,7 +63,7 @@ export default function SimulatorPage() {
       const res = await fetch("/api/simulator", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "execute", l1, l2, l3, l4,
+          action: "execute", l1, lShipping, l2, l3, l4,
           ...(needsAmount ? { refundAmount: Number(refundAmount) } : {}),
         }),
       });
@@ -88,7 +94,7 @@ export default function SimulatorPage() {
     setResetting(true);
     await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset" }) });
     setConsumer({ ...INITIAL });
-    setL1(null); setL2(null); setL3(null); setL4(null);
+    setL1(null); setLShipping(null); setL2(null); setL3(null); setL4(null);
     setRefundAmount("");
     setResults([]);
     setResetting(false);
@@ -138,6 +144,14 @@ export default function SimulatorPage() {
           <h2 className="text-xs font-semibold text-gray-400 uppercase mb-2">L1 商品數量</h2>
           <div className="grid grid-cols-2 gap-3">
             {L1_OPTIONS.map((o) => <Card key={o.id} selected={l1 === o.id} onClick={() => setL1(o.id)} label={o.label} desc={o.desc} />)}
+          </div>
+        </div>
+
+        {/* Shipping */}
+        <div>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase mb-2">運費模式</h2>
+          <div className="grid grid-cols-2 gap-3">
+            {SHIPPING_OPTIONS.map((o) => <Card key={o.id} selected={lShipping === o.id} onClick={() => setLShipping(o.id)} label={o.label} desc={o.desc} />)}
           </div>
         </div>
 
