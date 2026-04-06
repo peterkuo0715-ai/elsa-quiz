@@ -239,7 +239,17 @@ async function execute(params: ExecuteParams) {
         referenceType: ReferenceType.SUB_ORDER, referenceId: subOrder.id,
         idempotencyKey: `sim-refund-${subOrder.id}`, description: `全額退款: ${order.orderNumber}`,
       });
-      await prisma.subOrder.update({ where: { id: subOrder.id }, data: { subOrderStatus: SubOrderStatus.CANCELLED } });
+      // Update sub_order: 金額歸零 + 狀態取消
+      await prisma.subOrder.update({ where: { id: subOrder.id }, data: {
+        subOrderStatus: SubOrderStatus.CANCELLED,
+        merchantReceivableAmount: "0",
+        availableSettlementAmount: "0",
+      } });
+      await prisma.settlementSnapshot.create({ data: {
+        subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
+        amountBefore: moneyToString(receivable), amountAfter: "0",
+        reasonCode: "FULL_REFUND", reasonDetail: "全額退款",
+      } });
       // Consumer refund: cash + hicoin original path
       consumerRefund = { cash: so.subOrderCashPaidAmount, hiCoin: so.subOrderHiCoinAllocated };
       details.push(`\n🔄 全額退款: 退消費者台幣${consumerRefund.cash} + 嗨幣${consumerRefund.hiCoin}`);
@@ -269,8 +279,22 @@ async function execute(params: ExecuteParams) {
       const cashRefund = moneyRound(moneySub(amount, hiCoinRefund));
       consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
 
+      // Update sub_order 金額
+      const newReceivable1 = moneyRound(moneySub(receivable, merchantDebit));
+      await prisma.subOrder.update({ where: { id: subOrder.id }, data: {
+        merchantReceivableAmount: moneyToString(newReceivable1),
+        availableSettlementAmount: moneyToString(newReceivable1),
+      } });
+      await prisma.settlementSnapshot.create({ data: {
+        subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
+        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable1),
+        reasonCode: params.l4 === "adjudicated" ? "ADJUDICATED_REFUND" : "NEGOTIATED_REFUND",
+        reasonDetail: `${label} NT$${amount}`,
+      } });
+
       details.push(`\n🤝 ${label}: 退消費者 NT$${amount} (台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""})`);
       details.push(`   商家扣回: ${merchantDebit}（按比例: ${amount}/${totalProduct} × 應得${receivable}）`);
+      details.push(`   商家應得更新: ${receivable} → ${newReceivable1}`);
       details.push(`   發票費 ${so.invoiceFeeAmount} 不退${params.l4 === "adjudicated" ? " [平台裁決]" : ""}`);
       break;
     }
@@ -294,8 +318,21 @@ async function execute(params: ExecuteParams) {
       const cashRefund = moneyRound(moneySub(returnItem.finalPriceBeforeHiCoin, hiCoinRefund));
       consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
 
+      // Update sub_order 金額
+      const newReceivable2 = moneyRound(moneySub(receivable, merchantDebit));
+      await prisma.subOrder.update({ where: { id: subOrder.id }, data: {
+        merchantReceivableAmount: moneyToString(newReceivable2),
+        availableSettlementAmount: moneyToString(newReceivable2),
+      } });
+      await prisma.settlementSnapshot.create({ data: {
+        subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
+        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable2),
+        reasonCode: "PARTIAL_RETURN", reasonDetail: `部分退貨: ${returnItem.productName}`,
+      } });
+
       details.push(`\n📦 部分退貨: 退 ${returnItem.productName}，退消費者台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""}`);
       details.push(`   商家扣回: ${merchantDebit}`);
+      details.push(`   商家應得更新: ${receivable} → ${newReceivable2}`);
       break;
     }
   }
