@@ -20,6 +20,7 @@ const STATUS_MAP: Record<string, { label: string; color: string }> = {
   APPRECIATION_PERIOD: { label: "鑑賞期中", color: "bg-yellow-100 text-yellow-800" },
   SETTLEABLE: { label: "可結算", color: "bg-green-100 text-green-800" },
   SETTLED: { label: "已結算", color: "bg-green-100 text-green-800" },
+  DISPUTED: { label: "爭議中", color: "bg-purple-100 text-purple-800" },
   CANCELLED: { label: "已取消", color: "bg-red-100 text-red-800" },
 };
 

@@ -19,6 +19,7 @@ const SUB_ORDER_STATUS_LABELS: Record<string, string> = {
   APPRECIATION_PERIOD: "鑑賞期中",
   SETTLEABLE: "可結算",
   SETTLED: "已結算",
+  DISPUTED: "爭議中",
   CANCELLED: "已取消",
 };
 
@@ -62,9 +63,10 @@ const colorMap: Record<string, string> = {
   SHIPPED: "bg-blue-100 text-blue-800",
   DELIVERED: "bg-blue-100 text-blue-800",
 
-  // Purple - frozen/reserved
+  // Purple - frozen/reserved/dispute
   DISPUTE_FROZEN: "bg-purple-100 text-purple-800",
   PARTIALLY_FROZEN: "bg-purple-100 text-purple-800",
+  DISPUTED: "bg-purple-100 text-purple-800",
   ADJUSTED: "bg-indigo-100 text-indigo-800",
 
   // Default

@@ -63,6 +63,7 @@ enum SubOrderStatus {
   APPRECIATION_PERIOD               // 鑑賞期倒數中
   SETTLEABLE                        // 可結算
   SETTLED                           // 已結算
+  DISPUTED                          // 爭議中
   CANCELLED                         // 已取消
 }
 

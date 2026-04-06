@@ -221,12 +221,25 @@ async function execute(params: ExecuteParams) {
       break;
 
     case "dispute": {
-      const freezeAmt = 500;
+      // 爭議是 by 商品/子單，凍結該子單全部商家應得
+      const freezeAmt = receivable;
       const d = await prisma.disputeCase.create({
-        data: { caseNumber: `DSP-${uid()}`, merchantId: m.id, subOrderId: subOrder.id, disputeReason: "商品瑕疵爭議", disputeAmount: moneyToString(money(freezeAmt)), status: DisputeStatus.PARTIALLY_FROZEN },
+        data: { caseNumber: `DSP-${uid()}`, merchantId: m.id, subOrderId: subOrder.id,
+          disputeReason: "消費者發起售後爭議", disputeAmount: moneyToString(freezeAmt),
+          status: DisputeStatus.PARTIALLY_FROZEN },
       });
-      await DisputeService.freezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id, amountTaxIncl: String(freezeAmt) });
-      details.push(`\n⚠️ 爭議中: ${d.caseNumber}，凍結 NT$${freezeAmt}`);
+      await DisputeService.freezeAmount(PC(), { disputeId: d.id, walletId: m.wallet!.id, amountTaxIncl: freezeAmt.toString() });
+      // 子單狀態改為爭議中
+      await prisma.subOrder.update({ where: { id: subOrder.id }, data: { subOrderStatus: SubOrderStatus.DISPUTED } });
+      await prisma.settlementSnapshot.create({ data: {
+        subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
+        amountBefore: moneyToString(receivable), amountAfter: moneyToString(receivable),
+        reasonCode: "DISPUTE_OPENED", reasonDetail: `售後爭議 ${d.caseNumber}，凍結商家應得 ${freezeAmt}`,
+      } });
+      details.push(`\n⚠️ 爭議處理中: ${d.caseNumber}`);
+      details.push(`   狀態: 消費者發起售後 → 爭議處理中`);
+      details.push(`   凍結: 商家應得 NT$${freezeAmt} 全額凍結至 Reserved`);
+      details.push(`   後續: 可由平台進行「協商退款」或「仲裁退款」`);
       break;
     }
 
