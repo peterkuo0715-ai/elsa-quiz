@@ -301,38 +301,64 @@ async function execute(params: ExecuteParams) {
 
     case "partial_return": {
       if (so.items.length < 2) { details.push("\n⚠️ 單商品不支援部分退貨"); break; }
-      const returnItem = so.items[0];
-      const returnSoItem = subOrder.items[0];
-      const itemRatio = returnItem.finalPriceBeforeHiCoin.dividedBy(so.subOrderFinalItemAmount);
-      const merchantDebit = moneyRound(moneyMul(receivable, itemRatio));
+      const returnItem = so.items[0]; // 退第一件
+      const keepItem = so.items[1];   // 保留第二件
 
-      await LedgerService.createEntry(TX(), {
-        walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
-        entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: merchantDebit.negated(),
-        amountTaxIncl: merchantDebit.negated(), amountTaxExcl: merchantDebit.negated(), taxAmount: ZERO,
-        referenceType: ReferenceType.SUB_ORDER_ITEM, referenceId: returnSoItem.id,
-        idempotencyKey: `sim-partret-${returnSoItem.id}`, description: `部分退貨: ${returnItem.productName}`,
-      });
-
+      // 退還消費者：退第一件的台幣+嗨幣
       const hiCoinRefund = returnItem.hiCoinAllocatedAmount;
       const cashRefund = moneyRound(moneySub(returnItem.finalPriceBeforeHiCoin, hiCoinRefund));
       consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
 
-      // Update sub_order 金額
-      const newReceivable2 = moneyRound(moneySub(receivable, merchantDebit));
+      // 重算：只用剩餘商品重新跑一次完整計算（不是按比例）
+      const remainingCalc = OrderCalculationService.calculate({
+        products: [{ productName: keepItem.productName, merchantId: m.id, originalPrice: Number(keepItem.finalPriceBeforeHiCoin.toString()), quantity: 1 }],
+        coupons: [],
+        hiCoinUsed: Number(keepItem.hiCoinAllocatedAmount.toString()),
+        shippingFees: { [m.id]: params.lShipping === "free_shipping" ? 0 : 80 },
+        paymentFeeRate: isInstallment ? 0.035 : 0.02,
+        merchantCommissions: { [m.id]: { storeRate: 0.03, categoryRate: 0.02 } },
+      });
+      const newSo = remainingCalc.subOrders[0];
+      const newReceivable = newSo.merchantReceivableAmount;
+
+      // Ledger: 扣回差額
+      const debitAmount = moneyRound(moneySub(receivable, newReceivable));
+      await LedgerService.createEntry(TX(), {
+        walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
+        entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: debitAmount.negated(),
+        amountTaxIncl: debitAmount.negated(), amountTaxExcl: debitAmount.negated(), taxAmount: ZERO,
+        referenceType: ReferenceType.SUB_ORDER_ITEM, referenceId: subOrder.items[0].id,
+        idempotencyKey: `sim-partret-${subOrder.items[0].id}`, description: `部分退貨: ${returnItem.productName}，重算剩餘商品`,
+      });
+
+      // Update sub_order: 用重算結果更新所有欄位
       await prisma.subOrder.update({ where: { id: subOrder.id }, data: {
-        merchantReceivableAmount: moneyToString(newReceivable2),
-        availableSettlementAmount: moneyToString(newReceivable2),
+        merchantReceivableAmount: moneyToString(newReceivable),
+        availableSettlementAmount: moneyToString(newReceivable),
+        subOrderFinalItemAmount: moneyToString(newSo.subOrderFinalItemAmount),
+        subOrderSettlementBaseAmount: moneyToString(newSo.subOrderSettlementBaseAmount),
+        subOrderHiCoinAllocated: moneyToString(newSo.subOrderHiCoinAllocated),
+        subOrderCashItemAmount: moneyToString(newSo.subOrderCashItemAmount),
+        subOrderCashPaidAmount: moneyToString(newSo.subOrderCashPaidAmount),
+        storeCommissionAmount: moneyToString(newSo.storeCommissionAmount),
+        categoryCommissionAmount: moneyToString(newSo.categoryCommissionAmount),
+        estimatedPaymentFeeAmount: moneyToString(newSo.estimatedPaymentFeeAmount),
+        subOrderShippingFee: moneyToString(newSo.subOrderShippingFee),
       } });
       await prisma.settlementSnapshot.create({ data: {
         subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
-        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable2),
-        reasonCode: "PARTIAL_RETURN", reasonDetail: `部分退貨: ${returnItem.productName}`,
+        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable),
+        reasonCode: "PARTIAL_RETURN_RECALC", reasonDetail: `部分退貨 ${returnItem.productName}，剩餘商品重算`,
       } });
 
       details.push(`\n📦 部分退貨: 退 ${returnItem.productName}，退消費者台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""}`);
-      details.push(`   商家扣回: ${merchantDebit}`);
-      details.push(`   商家應得更新: ${receivable} → ${newReceivable2}`);
+      details.push(`\n🔄 剩餘商品重算（${keepItem.productName}）:`);
+      details.push(`   結算基礎: ${newSo.subOrderSettlementBaseAmount}`);
+      details.push(`   商店抽成: ${newSo.storeCommissionAmount} | 分類抽成: ${newSo.categoryCommissionAmount}`);
+      details.push(`   金流費: ${newSo.estimatedPaymentFeeAmount} (基礎: ${newSo.paymentFeeBase}) | 發票費: ${newSo.invoiceFeeAmount}`);
+      details.push(`   運費: ${newSo.subOrderShippingFee}`);
+      details.push(`   商家應得: ${receivable} → ${newReceivable}（重算後）`);
+      details.push(`   商家扣回: ${debitAmount}`);
       break;
     }
   }
