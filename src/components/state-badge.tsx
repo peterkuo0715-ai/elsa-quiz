@@ -1,18 +1,29 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  SettlementItemStatus,
+  SubOrderStatus,
   PayoutRequestStatus,
   DisputeStatus,
   BankAccountChangeStatus,
 } from "@/generated/prisma";
-import { SETTLEMENT_STATUS_LABELS } from "@/lib/state-machines/settlement.machine";
 import { PAYOUT_STATUS_LABELS } from "@/lib/state-machines/payout.machine";
 import { DISPUTE_STATUS_LABELS } from "@/lib/state-machines/dispute.machine";
 import { BANK_ACCOUNT_CHANGE_STATUS_LABELS } from "@/lib/state-machines/bank-account-change.machine";
 
+const SUB_ORDER_STATUS_LABELS: Record<string, string> = {
+  EXPECTED_PROFIT: "可預期獲利",
+  PENDING_SHIPMENT: "待出貨",
+  SHIPPED: "已出貨",
+  IN_TRANSIT: "運送中",
+  DELIVERED: "已送達",
+  APPRECIATION_PERIOD: "鑑賞期中",
+  SETTLEABLE: "可結算",
+  SETTLED: "已結算",
+  CANCELLED: "已取消",
+};
+
 type StatusType =
-  | SettlementItemStatus
+  | SubOrderStatus
   | PayoutRequestStatus
   | DisputeStatus
   | BankAccountChangeStatus;
@@ -61,7 +72,7 @@ const colorMap: Record<string, string> = {
 };
 
 const allLabels: Record<string, string> = {
-  ...SETTLEMENT_STATUS_LABELS,
+  ...SUB_ORDER_STATUS_LABELS,
   ...PAYOUT_STATUS_LABELS,
   ...DISPUTE_STATUS_LABELS,
   ...BANK_ACCOUNT_CHANGE_STATUS_LABELS,

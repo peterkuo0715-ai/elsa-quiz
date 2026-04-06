@@ -117,7 +117,7 @@ export default async function DisputesPage() {
                       {d.disputeReason}
                     </TableCell>
                     <TableCell className="text-right font-medium">
-                      {moneyFormat(d.disputeAmountTaxIncl.toString())}
+                      {moneyFormat(d.disputeAmount.toString())}
                     </TableCell>
                     <TableCell>
                       {hasFrozen ? (

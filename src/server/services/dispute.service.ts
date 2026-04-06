@@ -71,9 +71,7 @@ export const DisputeService = {
       data: {
         disputeId: params.disputeId,
         walletId: params.walletId,
-        frozenAmountTaxIncl: moneyToString(breakdown.taxIncl),
-        frozenAmountTaxExcl: moneyToString(breakdown.taxExcl),
-        frozenTaxAmount: moneyToString(breakdown.taxAmount),
+        frozenAmount: moneyToString(breakdown.taxIncl),
         isFrozen: true,
       },
     });
@@ -96,7 +94,7 @@ export const DisputeService = {
     });
     if (!freeze) throw new Error("No active freeze found");
 
-    const amount = money(freeze.frozenAmountTaxIncl.toString());
+    const amount = money(freeze.frozenAmount.toString());
     const breakdown = taxInclToBreakdown(amount);
 
     // Debit from RESERVED
@@ -153,7 +151,7 @@ export const DisputeService = {
     });
     if (!freeze) throw new Error("No active freeze found");
 
-    const amount = money(freeze.frozenAmountTaxIncl.toString());
+    const amount = money(freeze.frozenAmount.toString());
     const breakdown = taxInclToBreakdown(amount);
 
     // Debit from RESERVED (permanent removal)

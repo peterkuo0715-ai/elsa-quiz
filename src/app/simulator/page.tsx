@@ -8,20 +8,22 @@ interface ConsumerAccount { cash: number; hiCoin: number; }
 const INITIAL: ConsumerAccount = { cash: 50000, hiCoin: 1000 };
 
 type L1 = "single" | "multi";
-type L2 = "cash" | "hicoin";
+type L2 = "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
 type L3 = "full_pay" | "installment";
 type L4 = "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
 
 const L1_OPTIONS: Array<{ id: L1; label: string; desc: string }> = [
-  { id: "single", label: "單商品", desc: "藍芽耳機 NT$1,500 × 1件" },
-  { id: "multi", label: "多商品", desc: "藍芽耳機 NT$1,500 + 保護殼 NT$500" },
+  { id: "single", label: "單商品", desc: "藍芽耳機 NT$1,400 (會員價) × 1件" },
+  { id: "multi", label: "多商品", desc: "藍芽耳機 NT$1,400 + 保護殼 NT$450" },
 ];
 const L2_OPTIONS: Array<{ id: L2; label: string; desc: string }> = [
   { id: "cash", label: "純台幣", desc: "全額台幣付款" },
-  { id: "hicoin", label: "台幣 + 嗨幣", desc: "部分嗨幣折抵 (平台補貼)" },
+  { id: "hicoin", label: "台幣 + 嗨幣", desc: "嗨幣折抵200 (平台吸收)" },
+  { id: "hicoin_platform_coupon", label: "嗨幣 + 平台券", desc: "嗨幣200 + 平台券-100 (不影響抽成)" },
+  { id: "hicoin_merchant_coupon", label: "嗨幣 + 商家券", desc: "嗨幣200 + 商家券-100 (影響抽成基礎)" },
 ];
 const L3_OPTIONS: Array<{ id: L3; label: string; desc: string }> = [
-  { id: "full_pay", label: "一次付清", desc: "金流費 2.8%" },
+  { id: "full_pay", label: "一次付清", desc: "金流費 2%" },
   { id: "installment", label: "信用卡分期", desc: "金流費 3.5%" },
 ];
 const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: boolean; multiOnly?: boolean }> = [

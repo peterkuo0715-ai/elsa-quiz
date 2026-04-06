@@ -20,10 +20,10 @@ export default async function PlatformDashboard() {
       },
     }),
     prisma.merchantWallet.count({ where: { isFrozen: true } }),
-    prisma.settlementItem.count({
+    prisma.subOrder.count({
       where: {
-        status: "IN_APPRECIATION_PERIOD",
-        appreciationEndsAt: { lte: new Date() },
+        subOrderStatus: "APPRECIATION_PERIOD",
+        appreciationPeriodEndAt: { lte: new Date() },
       },
     }),
     prisma.merchantBankAccountChangeRequest.count({
