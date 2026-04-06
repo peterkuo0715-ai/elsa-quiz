@@ -208,7 +208,7 @@ async function execute(params: ExecuteParams) {
   if (!calc.totalMerchantCouponAmount.isZero()) details.push(`   商家券: -${calc.totalMerchantCouponAmount}（影響抽成基礎）`);
   details.push(`   付款: 台幣${calc.cashTotalPaid}${!calc.hiCoinTotalUsed.isZero() ? ` + 嗨幣${calc.hiCoinTotalUsed}` : ""} | ${isInstallment ? "分期" : "一次付清"} | 嗨幣上限${calc.hiCoinMaxUsableAmount}`);
   details.push(`   結算基礎: ${so.subOrderSettlementBaseAmount} | 商店抽成${so.storeCommissionAmount}(${so.storeCommissionRate.times(100)}%) + 分類抽成${so.categoryCommissionAmount}(${so.categoryCommissionRate.times(100)}%)`);
-  details.push(`   金流費: ${so.estimatedPaymentFeeAmount} | 發票費: ${so.invoiceFeeAmount}(不可退) | 運費: ${so.subOrderShippingFee}`);
+  details.push(`   金流費: ${so.estimatedPaymentFeeAmount} (基礎: 商品${so.subOrderFinalItemAmount}+運費${so.subOrderShippingFee}=${so.paymentFeeBase}) | 發票費: ${so.invoiceFeeAmount}(不可退) | 運費: ${so.subOrderShippingFee}`);
   details.push(`   商家應得: ${so.merchantReceivableAmount}${!so.platformAbsorbedAmount.isZero() ? ` (平台吸收${so.platformAbsorbedAmount})` : ""}`);
 
   switch (params.l4) {

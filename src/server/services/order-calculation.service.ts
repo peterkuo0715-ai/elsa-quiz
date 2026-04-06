@@ -60,6 +60,7 @@ export interface SubOrderResult {
   storeCommissionAmount: Decimal;
   categoryCommissionRate: Decimal;
   categoryCommissionAmount: Decimal;
+  paymentFeeBase: Decimal;               // 金流費基礎 = 商品全額 + 運費
   estimatedPaymentFeeAmount: Decimal;
   invoiceFeeAmount: Decimal;             // 固定2元
   // 結果
@@ -221,15 +222,16 @@ export const OrderCalculationService = {
       const subCashItem = moneyRound(moneySub(subFinalItemAmount, subHiCoin));
       const subCashPaid = moneyRound(moneyAdd(subCashItem, shipping));
 
-      // Commission (PRD 6.1, 6.2)
+      // Commission (PRD 6.1, 6.2) — 基礎 = 結算基礎（運費不參與抽成）
       const commConfig = input.merchantCommissions[merchantId] || { storeRate: 0, categoryRate: 0 };
       const storeRate = money(commConfig.storeRate);
       const categoryRate = money(commConfig.categoryRate);
       const storeCommission = moneyCeil(moneyMul(subSettlementBase, storeRate));
       const categoryCommission = moneyCeil(moneyMul(subSettlementBase, categoryRate));
 
-      // Payment fee (PRD 6.3)
-      const paymentFee = moneyCeil(moneyMul(subCashPaid, input.paymentFeeRate));
+      // Payment fee — 基礎 = 商品全額 + 運費（不扣嗨幣，嗨幣是平台內部折抵，實際金流走全額）
+      const paymentFeeBase = moneyRound(moneyAdd(subFinalItemAmount, shipping));
+      const paymentFee = moneyCeil(moneyMul(paymentFeeBase, input.paymentFeeRate));
 
       // Invoice fee (PRD 6.4) - fixed 2/sub-order
       const invoiceFee = money(2);
@@ -277,6 +279,7 @@ export const OrderCalculationService = {
         storeCommissionAmount: storeCommission,
         categoryCommissionRate: categoryRate,
         categoryCommissionAmount: categoryCommission,
+        paymentFeeBase: paymentFeeBase,
         estimatedPaymentFeeAmount: paymentFee,
         invoiceFeeAmount: invoiceFee,
         merchantReceivableAmount: merchantReceivable,

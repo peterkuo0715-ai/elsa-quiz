@@ -18,6 +18,9 @@ export default async function ReconciliationDetailPage({ params }: { params: Pro
   const detail = await getReconciliationDetail(id, session.user.merchantId);
   if (!detail) notFound();
 
+  const hiCoinTotal = detail.items.reduce((s, i) => s + Number(i.hiCoinAllocatedAmount.toString()), 0);
+  const cashItemTotal = Number(detail.subOrderFinalItemAmount.toString()) - hiCoinTotal;
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -29,50 +32,110 @@ export default async function ReconciliationDetailPage({ params }: { params: Pro
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        {/* 商品明細 */}
+        {/* ===== 區塊一：訂單資訊 ===== */}
         <Card>
-          <CardHeader><CardTitle className="text-base">商品明細</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">訂單資訊</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            {detail.items.map((item) => (
-              <div key={item.id} className="flex justify-between">
-                <span>{item.orderItem.productName} × {item.quantity}</span>
-                <span>{moneyFormat(item.finalPriceBeforeHiCoin.toString())}</span>
-              </div>
-            ))}
-            {detail.items.some((i) => Number(i.hiCoinAllocatedAmount.toString()) > 0) && (
-              <>
-                <Separator />
-                {detail.items.filter((i) => Number(i.hiCoinAllocatedAmount.toString()) > 0).map((item) => (
-                  <div key={`hc-${item.id}`} className="flex justify-between text-amber-600">
-                    <span>嗨幣折抵 ({item.orderItem.productName})</span>
-                    <span>-{item.hiCoinAllocatedAmount.toString()}</span>
+            <p className="text-xs text-muted-foreground mb-2">商品明細與消費者付款方式</p>
+
+            {detail.items.map((item) => {
+              const hiCoin = Number(item.hiCoinAllocatedAmount.toString());
+              const cash = Number(item.finalPriceBeforeHiCoin.toString()) - hiCoin;
+              return (
+                <div key={item.id} className="rounded-md border p-3 space-y-1">
+                  <div className="flex justify-between font-medium">
+                    <span>{item.orderItem.productName} × {item.quantity}</span>
+                    <span>NT$ {Number(item.finalPriceBeforeHiCoin.toString()).toLocaleString()}</span>
                   </div>
-                ))}
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>VIP 成交價</span>
+                    <span>NT$ {Number(item.finalPriceBeforeHiCoin.toString()).toLocaleString()}</span>
+                  </div>
+                  {hiCoin > 0 && (
+                    <>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">台幣支付</span>
+                        <span>NT$ {cash.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-xs text-amber-600">
+                        <span>嗨幣折抵</span>
+                        <span>-{hiCoin.toLocaleString()} 嗨幣</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+
+            <Separator />
+
+            <Row label="子單商品成交總額" value={`NT$ ${Number(detail.subOrderFinalItemAmount.toString()).toLocaleString()}`} />
+            {hiCoinTotal > 0 && (
+              <>
+                <Row label="消費者台幣支付" value={`NT$ ${cashItemTotal.toLocaleString()}`} />
+                <Row label="消費者嗨幣折抵" value={<span className="text-amber-600">-{hiCoinTotal.toLocaleString()} 嗨幣（平台補貼）</span>} />
               </>
             )}
+            <Row label="運費" value={
+              Number(detail.subOrderShippingFee.toString()) > 0
+                ? <span className="text-green-600">NT$ {Number(detail.subOrderShippingFee.toString()).toLocaleString()}（歸商家，參與金流費）</span>
+                : <span className="text-muted-foreground">免運（商店吸收）</span>
+            } />
+            <Row label="消費者總付" value={
+              <span className="font-medium">NT$ {(cashItemTotal + Number(detail.subOrderShippingFee.toString())).toLocaleString()}
+              {hiCoinTotal > 0 ? ` + ${hiCoinTotal} 嗨幣` : ""}</span>
+            } />
           </CardContent>
         </Card>
 
-        {/* 費用拆解 (PRD Section 10) */}
+        {/* ===== 區塊二：費用拆解與商家結算 ===== */}
         <Card>
-          <CardHeader><CardTitle className="text-base">費用拆解</CardTitle></CardHeader>
+          <CardHeader><CardTitle className="text-base">費用拆解與商家結算</CardTitle></CardHeader>
           <CardContent className="space-y-2 text-sm">
-            <Row label="子單商品成交總額" value={moneyFormat(detail.subOrderFinalItemAmount.toString())} />
-            <Row label="結算基礎（商家券折後）" value={moneyFormat(detail.subOrderSettlementBaseAmount.toString())} />
+            <p className="text-xs text-muted-foreground mb-2">平台費用扣除與商家應得計算</p>
+
+            <Row label="結算基礎（商家券折後）" value={<span className="font-medium">NT$ {Number(detail.subOrderSettlementBaseAmount.toString()).toLocaleString()}</span>} />
+
             <Separator />
-            <Row label={`商店抽成 (${Number(detail.storeCommissionRate.toString()) * 100}%)`} value={<span className="text-red-600">-{detail.storeCommissionAmount.toString()}</span>} />
-            <Row label={`分類抽成 (${Number(detail.categoryCommissionRate.toString()) * 100}%)`} value={<span className="text-red-600">-{detail.categoryCommissionAmount.toString()}</span>} />
-            <Row label="金流費" value={<span className="text-red-600">-{detail.estimatedPaymentFeeAmount.toString()}</span>} />
-            <Row label="發票費（不可退）" value={<span className="text-red-600">-{detail.invoiceFeeAmount.toString()}</span>} />
-            <Row label="運費" value={<span className="text-green-600">+{detail.subOrderShippingFee.toString()}</span>} />
-            {Number(detail.subOrderHiCoinAllocated.toString()) > 0 && (
-              <Row label="嗨幣折抵（平台補貼，不影響商家）" value={<span className="text-amber-600">{detail.subOrderHiCoinAllocated.toString()} (資訊欄)</span>} />
+            <p className="text-xs text-muted-foreground">扣款項</p>
+
+            <Row label={`商店抽成 (${(Number(detail.storeCommissionRate.toString()) * 100).toFixed(1)}%)`}
+              value={<span className="text-red-600">-{Number(detail.storeCommissionAmount.toString()).toLocaleString()}</span>} />
+            <Row label={`分類抽成 (${(Number(detail.categoryCommissionRate.toString()) * 100).toFixed(1)}%)`}
+              value={<span className="text-red-600">-{Number(detail.categoryCommissionAmount.toString()).toLocaleString()}</span>} />
+
+            {(() => {
+              const feeBase = Number(detail.subOrderFinalItemAmount.toString()) + Number(detail.subOrderShippingFee.toString());
+              return (
+                <Row label={`金流費 (商品${Number(detail.subOrderFinalItemAmount.toString())}+運費${Number(detail.subOrderShippingFee.toString())}=${feeBase} × 費率)`}
+                  value={<span className="text-red-600">-{Number(detail.estimatedPaymentFeeAmount.toString()).toLocaleString()}</span>} />
+              );
+            })()}
+
+            <Row label="發票費（固定，不可退）" value={<span className="text-red-600">-{Number(detail.invoiceFeeAmount.toString()).toLocaleString()}</span>} />
+
+            <Separator />
+            <p className="text-xs text-muted-foreground">加項</p>
+
+            <Row label="運費（歸商家，不參與抽成）" value={
+              Number(detail.subOrderShippingFee.toString()) > 0
+                ? <span className="text-green-600">+{Number(detail.subOrderShippingFee.toString()).toLocaleString()}</span>
+                : <span className="text-muted-foreground">0（免運）</span>
+            } />
+
+            {hiCoinTotal > 0 && (
+              <Row label="嗨幣折抵（平台補貼，不影響商家）" value={<span className="text-amber-600">{hiCoinTotal.toLocaleString()} (資訊欄)</span>} />
             )}
+
             {Number(detail.platformAbsorbedAmount.toString()) > 0 && (
-              <Row label="平台吸收差額" value={<span className="text-purple-600">{detail.platformAbsorbedAmount.toString()}</span>} />
+              <Row label="平台吸收差額（商家最低保護 0）" value={<span className="text-purple-600">+{Number(detail.platformAbsorbedAmount.toString()).toLocaleString()}</span>} />
             )}
+
             <Separator />
-            <Row label="商家應得" value={<span className="font-bold text-lg">{moneyFormat(detail.merchantReceivableAmount.toString())}</span>} />
+            <div className="flex items-start justify-between pt-2">
+              <span className="font-bold text-base">商家應得</span>
+              <span className="font-bold text-xl">{moneyFormat(detail.merchantReceivableAmount.toString())}</span>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -119,5 +182,5 @@ export default async function ReconciliationDetailPage({ params }: { params: Pro
 }
 
 function Row({ label, value }: { label: string; value: React.ReactNode }) {
-  return <div className="flex items-start justify-between"><span className="text-muted-foreground">{label}</span><span className="text-right">{value}</span></div>;
+  return <div className="flex items-start justify-between gap-4"><span className="text-muted-foreground text-xs">{label}</span><span className="text-right shrink-0">{value}</span></div>;
 }
