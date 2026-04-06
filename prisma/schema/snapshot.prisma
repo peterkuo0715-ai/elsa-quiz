@@ -1,0 +1,21 @@
+// ============================================================
+// Settlement Snapshots (PRD Section 11, 17.9)
+// ============================================================
+
+model SettlementSnapshot {
+  id             String       @id @default(cuid())
+  subOrderId     String
+  subOrder       SubOrder     @relation(fields: [subOrderId], references: [id])
+  snapshotType   SnapshotType                              // 預期/可結算/已結算
+  amountBefore   Decimal      @db.Decimal(18, 2) @default(0)
+  amountAfter    Decimal      @db.Decimal(18, 2) @default(0)
+  reasonCode     String                                    // e.g. "PAYMENT_SUCCESS", "REFUND", "SETTLEMENT"
+  reasonDetail   String?
+  operatorType   String       @default("SYSTEM")           // SYSTEM / USER
+  operatorId     String?
+  createdAt      DateTime     @default(now())
+
+  @@index([subOrderId])
+  @@index([snapshotType])
+  @@map("settlement_snapshots")
+}

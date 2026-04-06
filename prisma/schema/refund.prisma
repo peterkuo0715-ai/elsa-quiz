@@ -1,55 +1,52 @@
 // ============================================================
-// Refunds & Refund Items
+// Refunds & Refund Items (PRD Section 8, 17.7, 17.8)
 // ============================================================
 
 model Refund {
-  id              String     @id @default(cuid())
-  refundNumber    String     @unique
-  orderId         String
-  order           Order      @relation(fields: [orderId], references: [id])
-  refundType      RefundType
-  // Total refund amount
-  totalAmountTaxIncl Decimal @db.Decimal(18, 4)
-  totalAmountTaxExcl Decimal @db.Decimal(18, 4)
-  totalTaxAmount     Decimal @db.Decimal(18, 4)
-  reason          String?
-  // Processing
-  processedAt     DateTime?
-  processedBy     String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
+  id                      String       @id @default(cuid())
+  refundNumber            String       @unique
+  orderId                 String
+  order                   Order        @relation(fields: [orderId], references: [id])
+  subOrderId              String
+  subOrder                SubOrder     @relation(fields: [subOrderId], references: [id])
+  // 狀態
+  refundStatus            RefundStatus @default(REQUESTED)
+  refundType              RefundType
+  refundReason            String?
+  // 金額
+  totalCashRefundAmount   Decimal      @db.Decimal(18, 2) @default(0)   // 現金退款總額
+  totalHiCoinRefundAmount Decimal      @db.Decimal(18, 2) @default(0)   // 嗨幣退回總額
+  shippingRefundAmount    Decimal      @db.Decimal(18, 2) @default(0)   // 運費退款
+  // 時間
+  refundRequestedAt       DateTime     @default(now())
+  refundApprovedAt        DateTime?
+  refundCompletedAt       DateTime?
+  createdBy               String?
+  updatedAt               DateTime     @updatedAt
 
   items RefundItem[]
 
   @@index([orderId])
+  @@index([subOrderId])
   @@map("refunds")
 }
 
 model RefundItem {
-  id              String    @id @default(cuid())
-  refundId        String
-  refund          Refund    @relation(fields: [refundId], references: [id])
-  orderItemId     String
-  orderItem       OrderItem @relation(fields: [orderItemId], references: [id])
-  // Refund breakdown
-  refundAmountTaxIncl    Decimal @db.Decimal(18, 4)
-  refundAmountTaxExcl    Decimal @db.Decimal(18, 4)
-  refundTaxAmount        Decimal @db.Decimal(18, 4)
-  // Commission refunded (proportional)
-  commissionRefund       Decimal @db.Decimal(18, 4) @default(0)
-  // Payment fee: NOT refunded (always 0 here for clarity)
-  paymentFeeRefund       Decimal @db.Decimal(18, 4) @default(0)
-  // Campaign cost recovered (proportional)
-  campaignCostRecovery   Decimal @db.Decimal(18, 4) @default(0)
-  // Hi Coin refund split (原路返回)
-  refundCashAmount       Decimal @db.Decimal(18, 4) @default(0)  // 退台幣金額
-  refundHiCoinAmount     Decimal @db.Decimal(18, 4) @default(0)  // 退嗨幣金額
-  hiCoinSubsidyReturn    Decimal @db.Decimal(18, 4) @default(0)  // 平台收回嗨幣補貼
-  // Net debit to merchant = refundAmount - commissionRefund + campaignCostRecovery
-  netMerchantDebit       Decimal @db.Decimal(18, 4)
-  createdAt              DateTime @default(now())
+  id                    String       @id @default(cuid())
+  refundId              String
+  refund                Refund       @relation(fields: [refundId], references: [id])
+  subOrderItemId        String
+  subOrderItem          SubOrderItem @relation(fields: [subOrderItemId], references: [id])
+  // 退款金額
+  refundableAmount      Decimal      @db.Decimal(18, 2) @default(0)   // 可退金額
+  actualRefundAmount    Decimal      @db.Decimal(18, 2) @default(0)   // 實退金額
+  hiCoinRefundAmount    Decimal      @db.Decimal(18, 2) @default(0)   // 嗨幣退回金額
+  // 比例 & 尾差
+  refundRatio           Decimal      @db.Decimal(8, 4) @default(0)
+  tailDiffFlag          Boolean      @default(false)                   // 尾差標記
+  createdAt             DateTime     @default(now())
 
   @@index([refundId])
-  @@index([orderItemId])
+  @@index([subOrderItemId])
   @@map("refund_items")
 }

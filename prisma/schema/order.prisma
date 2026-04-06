@@ -1,92 +1,82 @@
 // ============================================================
-// Orders, Order Items & Shipments
+// Orders & Order Items (PRD Section 17.1, 17.2)
 // ============================================================
 
 model Order {
-  id              String    @id @default(cuid())
-  orderNumber     String    @unique
-  merchantId      String
-  merchant        Merchant  @relation(fields: [merchantId], references: [id])
-  // Consumer info (minimal)
-  customerName    String?
-  customerEmail   String?
-  // Amounts (tax-inclusive / exclusive / tax)
-  totalAmountTaxIncl  Decimal @db.Decimal(18, 4)
-  totalAmountTaxExcl  Decimal @db.Decimal(18, 4)
-  totalTaxAmount      Decimal @db.Decimal(18, 4)
-  // Shipping
-  shippingFeeTaxIncl  Decimal @db.Decimal(18, 4) @default(0)
-  shippingFeeTaxExcl  Decimal @db.Decimal(18, 4) @default(0)
-  shippingTaxAmount   Decimal @db.Decimal(18, 4) @default(0)
-  // Payment
-  paymentMethod   String?
-  paymentFee      Decimal   @db.Decimal(18, 4) @default(0)
-  paidAt          DateTime?
-  // Timestamps
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id                        String    @id @default(cuid())
+  orderNumber               String    @unique
+  memberId                  String?
+  orderStatus               String    @default("CREATED")
+  currency                  String    @default("TWD")
+  // 商品金額
+  originalItemAmount        Decimal   @db.Decimal(18, 2) @default(0)  // 商品原價合計
+  finalItemAmountBeforeCoupon Decimal @db.Decimal(18, 2) @default(0)  // 會員/活動價擇優後合計
+  // 優惠券
+  totalPlatformCouponAmount Decimal   @db.Decimal(18, 2) @default(0)  // 平台券折扣總額
+  totalMerchantCouponAmount Decimal   @db.Decimal(18, 2) @default(0)  // 商家券折扣總額
+  // 嗨幣
+  hiCoinMaxUsableAmount     Decimal   @db.Decimal(18, 2) @default(0)  // 嗨幣可折抵上限 (券折後×50%)
+  hiCoinTotalUsed           Decimal   @db.Decimal(18, 2) @default(0)  // 嗨幣實際使用
+  // 金額
+  shippingTotalAmount       Decimal   @db.Decimal(18, 2) @default(0)  // 運費合計
+  cashTotalPaid             Decimal   @db.Decimal(18, 2) @default(0)  // 現金實付合計
+  // 狀態
+  expectedProfitStatus      Boolean   @default(false)                  // 可預期獲利訂單
+  cancelFlag                Boolean   @default(false)
+  cancelReason              String?
+  // 時間
+  paidAt                    DateTime?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  items     OrderItem[]
-  shipments Shipment[]
-  refunds   Refund[]
+  items      OrderItem[]
+  subOrders  SubOrder[]
+  payment    PaymentTransaction?
+  refunds    Refund[]
 
-  @@index([merchantId])
-  @@index([paidAt])
   @@map("orders")
 }
 
 model OrderItem {
-  id                     String        @id @default(cuid())
-  orderId                String
-  order                  Order         @relation(fields: [orderId], references: [id])
-  storeId                String?
-  store                  MerchantStore? @relation(fields: [storeId], references: [id])
-  // Product info snapshot
-  productName            String
-  sku                    String?
-  quantity               Int           @default(1)
-  // Pricing
-  unitPriceTaxIncl       Decimal       @db.Decimal(18, 4)
-  unitPriceTaxExcl       Decimal       @db.Decimal(18, 4)
-  unitTaxAmount          Decimal       @db.Decimal(18, 4)
-  subtotalTaxIncl        Decimal       @db.Decimal(18, 4)
-  subtotalTaxExcl        Decimal       @db.Decimal(18, 4)
-  subtotalTaxAmount      Decimal       @db.Decimal(18, 4)
-  // Discount (after discount = basis for commission)
-  discountAmount         Decimal       @db.Decimal(18, 4) @default(0)
-  discountedPriceTaxIncl Decimal       @db.Decimal(18, 4)
-  discountedPriceTaxExcl Decimal       @db.Decimal(18, 4)
-  // Platform commission (calculated on discounted price excl tax)
-  platformCommissionRate Decimal       @db.Decimal(5, 4) @default(0)
-  platformCommission     Decimal       @db.Decimal(18, 4) @default(0)
-  // Hi Coin payment split
-  hiCoinAmount           Decimal       @db.Decimal(18, 4) @default(0) // 嗨幣折抵金額
-  cashAmount             Decimal       @db.Decimal(18, 4) @default(0) // 台幣實付金額
-  // Hi Coin mode
-  hiCoinMode             String?       // "PLATFORM_SUBSIDY" | "MERCHANT_CAMPAIGN" | null
-  hiCoinCampaignCost     Decimal       @db.Decimal(18, 4) @default(0) // 嗨幣活動成本(商家負擔,模式B)
-  // Payment fee
-  paymentFeeRate         Decimal       @db.Decimal(5, 4)  @default(0) // 金流費率
-  paymentFeeAmount       Decimal       @db.Decimal(18, 4) @default(0) // 金流手續費
-  // Campaign
-  campaignId             String?
-  campaignDiscount       Decimal       @db.Decimal(18, 4) @default(0) // 商家活動成本
-  // Timestamps
-  createdAt              DateTime      @default(now())
-  updatedAt              DateTime      @updatedAt
+  id                        String    @id @default(cuid())
+  orderId                   String
+  order                     Order     @relation(fields: [orderId], references: [id])
+  productId                 String?
+  merchantId                String
+  categoryId                String?
+  skuId                     String?
+  quantity                  Int       @default(1)
+  // 價格
+  originalPrice             Decimal   @db.Decimal(18, 2) @default(0)  // 原價
+  memberPrice               Decimal?  @db.Decimal(18, 2)              // 會員價
+  campaignPrice             Decimal?  @db.Decimal(18, 2)              // 活動價
+  finalPriceBeforeHiCoin    Decimal   @db.Decimal(18, 2) @default(0)  // 最終成交價(嗨幣前)
+  // 優惠券
+  platformCouponAmount      Decimal   @db.Decimal(18, 2) @default(0)  // 平台券分攤
+  merchantCouponAmount      Decimal   @db.Decimal(18, 2) @default(0)  // 商家券分攤
+  // 結算基礎 = finalPriceBeforeHiCoin - merchantCouponAmount (不扣平台券)
+  settlementBasePrice       Decimal   @db.Decimal(18, 2) @default(0)
+  // 嗨幣
+  hiCoinAllocableAmount     Decimal   @db.Decimal(18, 2) @default(0)  // 可折抵基礎
+  hiCoinAllocatedAmount     Decimal   @db.Decimal(18, 2) @default(0)  // 實際分攤嗨幣
+  // 商品名稱（展示用）
+  productName               String    @default("")
+  // 退款狀態
+  refundStatus              String?
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 
-  settlementItem SettlementItem?
-  refundItems    RefundItem[]
+  subOrderItems  SubOrderItem[]
 
   @@index([orderId])
-  @@index([storeId])
+  @@index([merchantId])
   @@map("order_items")
 }
 
 model Shipment {
   id          String    @id @default(cuid())
-  orderId     String
-  order       Order     @relation(fields: [orderId], references: [id])
+  subOrderId  String
+  subOrder    SubOrder  @relation(fields: [subOrderId], references: [id])
   trackingNo  String?
   carrier     String?
   shippedAt   DateTime?
@@ -94,7 +84,6 @@ model Shipment {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  @@index([orderId])
-  @@index([deliveredAt])
+  @@index([subOrderId])
   @@map("shipments")
 }

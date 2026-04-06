@@ -1,0 +1,92 @@
+// ============================================================
+// Sub Orders & Sub Order Items (PRD Section 17.3, 17.4)
+// Per-merchant settlement & fulfillment unit
+// ============================================================
+
+model SubOrder {
+  id                            String         @id @default(cuid())
+  orderId                       String
+  order                         Order          @relation(fields: [orderId], references: [id])
+  merchantId                    String
+  merchant                      Merchant       @relation(fields: [merchantId], references: [id])
+  // 狀態
+  subOrderStatus                SubOrderStatus @default(EXPECTED_PROFIT)
+  logisticsStatus               String?
+  settlementStatus              SettlementStatus @default(EXPECTED)
+  // 鑑賞期
+  appreciationPeriodStartAt     DateTime?
+  appreciationPeriodEndAt       DateTime?
+  // 結算金額 (PRD Section 7)
+  expectedSettlementAmount      Decimal        @db.Decimal(18, 2) @default(0)  // 可預期獲利
+  availableSettlementAmount     Decimal        @db.Decimal(18, 2) @default(0)  // 可結算金額
+  settledAmount                 Decimal        @db.Decimal(18, 2) @default(0)  // 已結算金額
+  // 子單商品金額
+  subOrderFinalItemAmount       Decimal        @db.Decimal(18, 2) @default(0)  // 子單商品最終成交總額
+  subOrderSettlementBaseAmount  Decimal        @db.Decimal(18, 2) @default(0)  // 子單商品結算基礎 (商家券折後)
+  subOrderHiCoinAllocated       Decimal        @db.Decimal(18, 2) @default(0)  // 子單分攤嗨幣
+  // 運費
+  subOrderShippingFee           Decimal        @db.Decimal(18, 2) @default(0)
+  // 現金
+  subOrderCashItemAmount        Decimal        @db.Decimal(18, 2) @default(0)  // 子單商品現金支付額 = 成交總額 - 嗨幣
+  subOrderCashPaidAmount        Decimal        @db.Decimal(18, 2) @default(0)  // 子單現金實付總額 = 現金商品額 + 運費
+  // 抽成 (PRD Section 6.1, 6.2)
+  storeCommissionRate           Decimal        @db.Decimal(8, 4) @default(0)
+  storeCommissionAmount         Decimal        @db.Decimal(18, 2) @default(0)
+  categoryCommissionRate        Decimal        @db.Decimal(8, 4) @default(0)
+  categoryCommissionAmount      Decimal        @db.Decimal(18, 2) @default(0)
+  // 金流費 (PRD Section 6.3)
+  estimatedPaymentFeeAmount     Decimal        @db.Decimal(18, 2) @default(0)
+  actualPaymentFeeAmount        Decimal        @db.Decimal(18, 2) @default(0)
+  paymentFeeAdjustmentAmount    Decimal        @db.Decimal(18, 2) @default(0)
+  // 發票費 (PRD Section 6.4) - 固定2元/子單，不可退
+  invoiceFeeAmount              Decimal        @db.Decimal(18, 2) @default(2)
+  // 商家應得 (PRD Section 7.1)
+  merchantReceivableAmount      Decimal        @db.Decimal(18, 2) @default(0)
+  // 平台吸收差額 (PRD Section 7.2, 商家最低0)
+  platformAbsorbedAmount        Decimal        @db.Decimal(18, 2) @default(0)
+  // 時間
+  createdAt                     DateTime       @default(now())
+  updatedAt                     DateTime       @updatedAt
+
+  items       SubOrderItem[]
+  shipments   Shipment[]
+  refunds     Refund[]
+  snapshots   SettlementSnapshot[]
+  allocations SubOrderPaymentAllocation[]
+
+  @@index([orderId])
+  @@index([merchantId])
+  @@index([subOrderStatus])
+  @@index([settlementStatus])
+  @@map("sub_orders")
+}
+
+model SubOrderItem {
+  id                        String      @id @default(cuid())
+  subOrderId                String
+  subOrder                  SubOrder    @relation(fields: [subOrderId], references: [id])
+  orderItemId               String
+  orderItem                 OrderItem   @relation(fields: [orderItemId], references: [id])
+  productId                 String?
+  productName               String      @default("")
+  quantity                  Int         @default(1)
+  // 金額
+  finalPriceBeforeHiCoin    Decimal     @db.Decimal(18, 2) @default(0)
+  settlementBasePrice       Decimal     @db.Decimal(18, 2) @default(0)
+  // 嗨幣分攤 (PRD Section 5.4)
+  hiCoinAllocatedAmount     Decimal     @db.Decimal(18, 2) @default(0)
+  hiCoinRefundedAmount      Decimal     @db.Decimal(18, 2) @default(0)
+  // 退款
+  refundRatio               Decimal     @db.Decimal(8, 4) @default(0)
+  refundAmount              Decimal     @db.Decimal(18, 2) @default(0)
+  refundTailDiffFlag        Boolean     @default(false)  // 尾差標記
+  // 時間
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+
+  refundItems  RefundItem[]
+
+  @@index([subOrderId])
+  @@index([orderItemId])
+  @@map("sub_order_items")
+}

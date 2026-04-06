@@ -7,14 +7,11 @@ model DisputeCase {
   caseNumber      String        @unique
   merchantId      String
   merchant        Merchant      @relation(fields: [merchantId], references: [id])
-  orderId         String?
-  orderItemId     String?
+  subOrderId      String?
   // Dispute details
   status          DisputeStatus @default(OPENED)
   disputeReason   String
-  disputeAmountTaxIncl Decimal  @db.Decimal(18, 4)
-  disputeAmountTaxExcl Decimal  @db.Decimal(18, 4)
-  disputeTaxAmount     Decimal  @db.Decimal(18, 4)
+  disputeAmount   Decimal       @db.Decimal(18, 2) @default(0)
   // Resolution
   resolution      String?
   resolvedAt      DateTime?
@@ -31,7 +28,7 @@ model DisputeCase {
 
   @@index([merchantId])
   @@index([status])
-  @@index([orderId])
+  @@index([subOrderId])
   @@map("dispute_cases")
 }
 
@@ -54,9 +51,7 @@ model DisputeFreeze {
   dispute         DisputeCase @relation(fields: [disputeId], references: [id])
   walletId        String
   // Only freeze the disputed amount, NOT entire order
-  frozenAmountTaxIncl Decimal @db.Decimal(18, 4)
-  frozenAmountTaxExcl Decimal @db.Decimal(18, 4)
-  frozenTaxAmount     Decimal @db.Decimal(18, 4)
+  frozenAmount        Decimal @db.Decimal(18, 2) @default(0)
   isFrozen        Boolean     @default(true)
   frozenAt        DateTime    @default(now())
   unfrozenAt      DateTime?

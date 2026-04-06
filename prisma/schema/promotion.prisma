@@ -1,0 +1,24 @@
+// ============================================================
+// Promotions (PRD Section 12, 17.10)
+// ============================================================
+
+model Promotion {
+  id                        String        @id @default(cuid())
+  promotionType             PromotionType
+  sponsorType               SponsorType                               // 出資方
+  priority                  Int           @default(0)                 // 優先序
+  stackableFlag             Boolean       @default(false)             // 是否可疊加
+  affectsSettlementBaseFlag Boolean       @default(false)             // 是否影響抽成基礎
+  affectsHiCoinLimitFlag    Boolean       @default(true)              // 是否影響嗨幣上限
+  name                      String        @default("")
+  description               String?
+  discountAmount            Decimal?      @db.Decimal(18, 2)         // 固定金額折扣
+  discountRate              Decimal?      @db.Decimal(8, 4)          // 百分比折扣
+  startAt                   DateTime?
+  endAt                     DateTime?
+  status                    String        @default("ACTIVE")
+  createdAt                 DateTime      @default(now())
+  updatedAt                 DateTime      @updatedAt
+
+  @@map("promotions")
+}

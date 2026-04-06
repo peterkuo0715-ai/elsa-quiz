@@ -1,0 +1,48 @@
+// ============================================================
+// Payment Transactions & Sub-Order Allocations (PRD Section 17.5, 17.6)
+// ============================================================
+
+model PaymentTransaction {
+  id                          String    @id @default(cuid())
+  orderId                     String    @unique
+  order                       Order     @relation(fields: [orderId], references: [id])
+  paymentMethod               String    @default("CREDIT_CARD")       // 信用卡一次/分期
+  paymentChannel              String?                                  // 金流商
+  paymentStatus               String    @default("PENDING")
+  // 金流費率快照 (PRD Section 11.3 - 訂單成立時快照)
+  paymentFeeRateSnapshot      Decimal   @db.Decimal(8, 4) @default(0)
+  paymentAmount               Decimal   @db.Decimal(18, 2) @default(0) // 實付金額
+  // 金流費
+  estimatedPaymentFeeAmount   Decimal   @db.Decimal(18, 2) @default(0)
+  actualPaymentFeeAmount      Decimal   @db.Decimal(18, 2) @default(0)
+  paymentFeeAdjustmentAmount  Decimal   @db.Decimal(18, 2) @default(0)
+  // 時間
+  paidAt                      DateTime?
+  refundedAt                  DateTime?
+  gatewayTransactionNo        String?
+  createdAt                   DateTime  @default(now())
+  updatedAt                   DateTime  @updatedAt
+
+  allocations SubOrderPaymentAllocation[]
+
+  @@map("payment_transactions")
+}
+
+model SubOrderPaymentAllocation {
+  id                                    String              @id @default(cuid())
+  paymentTransactionId                  String
+  paymentTransaction                    PaymentTransaction  @relation(fields: [paymentTransactionId], references: [id])
+  subOrderId                            String
+  subOrder                              SubOrder            @relation(fields: [subOrderId], references: [id])
+  // 分攤金額
+  allocatedCashPaidAmount               Decimal             @db.Decimal(18, 2) @default(0)
+  allocatedEstimatedPaymentFeeAmount    Decimal             @db.Decimal(18, 2) @default(0)
+  allocatedActualPaymentFeeAmount       Decimal             @db.Decimal(18, 2) @default(0)
+  allocatedPaymentFeeAdjustmentAmount   Decimal             @db.Decimal(18, 2) @default(0)
+  createdAt                             DateTime            @default(now())
+  updatedAt                             DateTime            @updatedAt
+
+  @@index([paymentTransactionId])
+  @@index([subOrderId])
+  @@map("sub_order_payment_allocations")
+}
