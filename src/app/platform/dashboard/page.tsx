@@ -10,7 +10,8 @@ export default async function PlatformDashboard() {
     pendingPayouts,
     activeDisputes,
     frozenWallets,
-    pendingSettlements,
+    settleableCount,
+    retentionCount,
     pendingBankChanges,
   ] = await Promise.all([
     prisma.merchant.count({ where: { isActive: true } }),
@@ -22,10 +23,10 @@ export default async function PlatformDashboard() {
     }),
     prisma.merchantWallet.count({ where: { isFrozen: true } }),
     prisma.subOrder.count({
-      where: {
-        subOrderStatus: "APPRECIATION_PERIOD",
-        appreciationPeriodEndAt: { lte: new Date() },
-      },
+      where: { subOrderStatus: "SETTLEABLE" },
+    }),
+    prisma.subOrder.count({
+      where: { subOrderStatus: "RETENTION_PERIOD" },
     }),
     prisma.merchantBankAccountChangeRequest.count({
       where: { status: "PENDING_REVIEW" },
@@ -40,7 +41,8 @@ export default async function PlatformDashboard() {
     { label: "總商家數", value: merchantCount.toString(), icon: Users, color: "text-blue-600" },
     { label: "待處理提領", value: pendingPayouts.toString(), icon: Banknote, color: "text-yellow-600" },
     { label: "活躍爭議", value: activeDisputes.toString(), icon: AlertTriangle, color: "text-orange-600" },
-    { label: "待結算項目", value: pendingSettlements.toString(), icon: Calculator, color: "text-purple-600" },
+    { label: "可結算子單", value: settleableCount.toString(), icon: Calculator, color: "text-green-600" },
+    { label: "保留期中", value: retentionCount.toString(), icon: Clock, color: "text-yellow-600" },
     { label: "凍結錢包", value: frozenWallets.toString(), icon: Shield, color: "text-red-600" },
     { label: "待審帳號變更", value: pendingBankChanges.toString(), icon: Clock, color: "text-yellow-600" },
   ];

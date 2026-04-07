@@ -4,38 +4,45 @@ import { money, ZERO } from "@/lib/money";
 import { subDays, startOfDay, format } from "date-fns";
 
 export async function getProjectedIncome(merchantId: string) {
-  const [appreciation, shipped, pending] = await Promise.all([
+  // PRD v4: 4-layer pipeline — PAID → FULFILLMENT_COMPLETE → RETENTION_PERIOD → SETTLEABLE
+  const [paid, fulfilled, retention, settleable] = await Promise.all([
     prisma.subOrder.findMany({
-      where: { merchantId, subOrderStatus: "APPRECIATION_PERIOD" },
-      select: { merchantReceivableAmount: true, appreciationPeriodEndAt: true },
+      where: { merchantId, subOrderStatus: "PAID" },
+      select: { merchantReceivableAmount: true, paidAt: true },
     }),
     prisma.subOrder.findMany({
-      where: { merchantId, subOrderStatus: { in: ["SHIPPED", "IN_TRANSIT"] } },
-      select: { merchantReceivableAmount: true },
+      where: { merchantId, subOrderStatus: "FULFILLMENT_COMPLETE" },
+      select: { merchantReceivableAmount: true, fulfilledAt: true },
     }),
     prisma.subOrder.findMany({
-      where: { merchantId, subOrderStatus: { in: ["EXPECTED_PROFIT", "PENDING_SHIPMENT"] } },
-      select: { merchantReceivableAmount: true },
+      where: { merchantId, subOrderStatus: "RETENTION_PERIOD" },
+      select: { merchantReceivableAmount: true, retentionEndAt: true },
+    }),
+    prisma.subOrder.findMany({
+      where: { merchantId, subOrderStatus: "SETTLEABLE" },
+      select: { merchantReceivableAmount: true, settleableAt: true },
     }),
   ]);
 
-  const appreciationTotal = appreciation.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
-  const shippedTotal = shipped.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
-  const pendingTotal = pending.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
+  const paidTotal = paid.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
+  const fulfilledTotal = fulfilled.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
+  const retentionTotal = retention.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
+  const settleableTotal = settleable.reduce((s, i) => s.plus(money(i.merchantReceivableAmount.toString())), ZERO);
 
-  let nearestEndDate: Date | null = null;
-  for (const i of appreciation) {
-    if (i.appreciationPeriodEndAt) {
-      const d = new Date(i.appreciationPeriodEndAt);
-      if (!nearestEndDate || d < nearestEndDate) nearestEndDate = d;
+  let nearestRetentionEnd: Date | null = null;
+  for (const i of retention) {
+    if (i.retentionEndAt) {
+      const d = new Date(i.retentionEndAt);
+      if (!nearestRetentionEnd || d < nearestRetentionEnd) nearestRetentionEnd = d;
     }
   }
 
   return {
-    total: appreciationTotal.plus(shippedTotal).plus(pendingTotal),
-    appreciation: { count: appreciation.length, amount: appreciationTotal, nearestEndDate },
-    shipped: { count: shipped.length, amount: shippedTotal },
-    paid: { count: pending.length, amount: pendingTotal },
+    total: paidTotal.plus(fulfilledTotal).plus(retentionTotal).plus(settleableTotal),
+    paid: { count: paid.length, amount: paidTotal },
+    fulfilled: { count: fulfilled.length, amount: fulfilledTotal },
+    retention: { count: retention.length, amount: retentionTotal, nearestRetentionEnd },
+    settleable: { count: settleable.length, amount: settleableTotal },
   };
 }
 

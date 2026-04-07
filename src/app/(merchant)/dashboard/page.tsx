@@ -142,42 +142,52 @@ export default async function MerchantDashboard() {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid gap-3 md:grid-cols-3">
-            {/* Tier 1: Appreciation period */}
+          <div className="grid gap-3 md:grid-cols-4">
+            {/* L1: 已付款 */}
+            <div className="rounded-lg border bg-blue-50/50 p-4">
+              <div className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4 text-blue-600" />
+                <span className="text-sm font-medium">已付款</span>
+              </div>
+              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.paid.amount)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{projected.paid.count} 筆・預計值</p>
+            </div>
+
+            {/* L2: 已履約 */}
+            <div className="rounded-lg border bg-cyan-50/50 p-4">
+              <div className="flex items-center gap-2">
+                <Truck className="h-4 w-4 text-cyan-600" />
+                <span className="text-sm font-medium">已履約</span>
+              </div>
+              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.fulfilled.amount)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{projected.fulfilled.count} 筆・預計值</p>
+            </div>
+
+            {/* L3: 保留期中 */}
             <div className="rounded-lg border bg-yellow-50/50 p-4">
               <div className="flex items-center gap-2">
                 <CalendarClock className="h-4 w-4 text-yellow-600" />
-                <span className="text-sm font-medium">鑑賞期中</span>
+                <span className="text-sm font-medium">保留期中</span>
               </div>
-              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.appreciation.amount)}</p>
+              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.retention.amount)}</p>
               <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                <span>{projected.appreciation.count} 筆</span>
-                {projected.appreciation.nearestEndDate && (
+                <span>{projected.retention.count} 筆・預計值</span>
+                {projected.retention.nearestRetentionEnd && (
                   <span>
-                    最近到期: {format(projected.appreciation.nearestEndDate, "MM/dd", { locale: zhTW })}
+                    最近到期: {format(projected.retention.nearestRetentionEnd, "MM/dd", { locale: zhTW })}
                   </span>
                 )}
               </div>
             </div>
 
-            {/* Tier 2: Shipped */}
-            <div className="rounded-lg border bg-blue-50/50 p-4">
+            {/* L4: 可結算 */}
+            <div className="rounded-lg border bg-green-50/50 p-4">
               <div className="flex items-center gap-2">
-                <Truck className="h-4 w-4 text-blue-600" />
-                <span className="text-sm font-medium">已出貨未到貨</span>
+                <Clock className="h-4 w-4 text-green-600" />
+                <span className="text-sm font-medium">可結算</span>
               </div>
-              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.shipped.amount)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{projected.shipped.count} 筆</p>
-            </div>
-
-            {/* Tier 3: Paid */}
-            <div className="rounded-lg border bg-gray-50 p-4">
-              <div className="flex items-center gap-2">
-                <CreditCard className="h-4 w-4 text-gray-600" />
-                <span className="text-sm font-medium">已付款未出貨</span>
-              </div>
-              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.paid.amount)}</p>
-              <p className="mt-1 text-xs text-muted-foreground">{projected.paid.count} 筆</p>
+              <p className="mt-2 text-xl font-bold">{moneyFormat(projected.settleable.amount)}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{projected.settleable.count} 筆・確認值</p>
             </div>
           </div>
         </CardContent>

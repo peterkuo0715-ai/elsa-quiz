@@ -15,7 +15,8 @@ type LShipping = "shipping_paid" | "free_shipping";
 type L2 = "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
 type LGuide = "no_guide" | "referral" | "list_guide";
 type L3 = "full_pay" | "installment";
-type L4 = "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
+type L4 = "paid" | "fulfilled" | "retention_period" | "settleable" | "settled"
+  | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
 
 const L1_OPTIONS: Array<{ id: L1; label: string; desc: string }> = [
   { id: "single", label: "單商品", desc: "藍芽耳機 NT$1,400 (會員價) × 1件" },
@@ -40,14 +41,19 @@ const L3_OPTIONS: Array<{ id: L3; label: string; desc: string }> = [
   { id: "full_pay", label: "一次付清", desc: "金流費 2%" },
   { id: "installment", label: "信用卡分期", desc: "金流費 3.5%" },
 ];
-const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: boolean; multiOnly?: boolean }> = [
-  { id: "settled", label: "過鑑賞期", desc: "正常完成，結算入帳" },
-  { id: "pending", label: "未過鑑賞期", desc: "鑑賞期中，Pending 狀態" },
-  { id: "dispute", label: "爭議處理中", desc: "消費者發起售後，商家應得全額凍結" },
-  { id: "negotiated", label: "協商退款", desc: "雙方協議退款金額", needAmount: true },
-  { id: "full_refund", label: "全額退款", desc: "全部退款，原路返回" },
-  { id: "adjudicated", label: "裁決退款", desc: "平台裁決退款金額", needAmount: true },
-  { id: "partial_return", label: "部分退貨", desc: "退第1件商品", multiOnly: true },
+const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: boolean; multiOnly?: boolean; group?: string }> = [
+  // 正常結算流程（4層時間分離）
+  { id: "paid", label: "已付款", desc: "收單完成，等待履約（預計值）", group: "flow" },
+  { id: "fulfilled", label: "已履約", desc: "配送完成，7天保留期開始（預計值）", group: "flow" },
+  { id: "retention_period", label: "保留期中", desc: "保留期 D+3/7（預計值）", group: "flow" },
+  { id: "settleable", label: "可結算", desc: "保留期結束，金額確認，等待撥款", group: "flow" },
+  { id: "settled", label: "已撥款", desc: "週批次撥款完成", group: "flow" },
+  // 異常流程
+  { id: "dispute", label: "爭議處理中", desc: "消費者發起售後，全額凍結", group: "exception" },
+  { id: "negotiated", label: "協商退款", desc: "雙方協議退款金額", needAmount: true, group: "exception" },
+  { id: "full_refund", label: "全額退貨", desc: "退商品，運費不退", group: "exception" },
+  { id: "adjudicated", label: "裁決退款", desc: "平台裁決退款金額", needAmount: true, group: "exception" },
+  { id: "partial_return", label: "部分退貨", desc: "退第1件商品", multiOnly: true, group: "exception" },
 ];
 
 export default function SimulatorPage() {
@@ -88,21 +94,29 @@ export default function SimulatorPage() {
           cash: c.cash - Number(debit.cash) + Number(refund.cash),
           hiCoin: c.hiCoin - Number(debit.hiCoin) + Number(refund.hiCoin),
         }));
-        // Update reward accounts based on guide type and L4 state
-        const isSettled = l4 === "settled";
-        const isRefund = ["full_refund", "negotiated", "adjudicated"].includes(l4 || "");
+        // PRD v4: 導購獎勵 - settleable 後確認，settled 後實發
+        const isConfirmed = ["settleable", "settled"].includes(l4 || "");
+        const isPaidOut = l4 === "settled";
+        const itemCount = l1 === "multi" ? 2 : 1;
         if (lGuide === "referral") {
-          const rewardPerItem = 50;
-          const itemCount = l1 === "multi" ? 2 : 1;
-          if (isSettled) {
-            setReferrer((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + rewardPerItem * itemCount }));
+          const reward = 50 * itemCount;
+          if (isPaidOut) {
+            setReferrer((r) => ({ hiCoin: r.hiCoin + reward, expectedHiCoin: r.expectedHiCoin }));
+          } else if (isConfirmed) {
+            setReferrer((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + reward }));
+          } else {
+            // 預計值 - 在 top bar 不增加，但 details 裡有提到
+            setReferrer((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + reward }));
           }
         }
         if (lGuide === "list_guide") {
-          const rewardPerItem = 80;
-          const itemCount = l1 === "multi" ? 2 : 1;
-          if (isSettled) {
-            setListCreator((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + rewardPerItem * itemCount }));
+          const reward = 80 * itemCount;
+          if (isPaidOut) {
+            setListCreator((r) => ({ hiCoin: r.hiCoin + reward, expectedHiCoin: r.expectedHiCoin }));
+          } else if (isConfirmed) {
+            setListCreator((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + reward }));
+          } else {
+            setListCreator((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + reward }));
           }
         }
         setResults((prev) => [{ orderNumber: data.orderNumber, details: data.details }, ...prev]);
@@ -229,8 +243,15 @@ export default function SimulatorPage() {
         {/* L4 */}
         <div>
           <h2 className="text-xs font-semibold text-gray-400 uppercase mb-2">L4 訂單結果狀態</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {L4_OPTIONS.map((o) => {
+          <p className="text-xs text-gray-400 mb-2">正常流程（4層時間分離）</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
+            {L4_OPTIONS.filter(o => o.group === "flow").map((o) => (
+              <Card key={o.id} selected={l4 === o.id} onClick={() => { setL4(o.id); if (!o.needAmount) setRefundAmount(""); }} label={o.label} desc={o.desc} />
+            ))}
+          </div>
+          <p className="text-xs text-gray-400 mb-2">異常流程（基於可結算狀態）</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {L4_OPTIONS.filter(o => o.group === "exception").map((o) => {
               const disabled = o.multiOnly && l1 !== "multi";
               return <Card key={o.id} selected={l4 === o.id} onClick={() => { setL4(o.id); if (!o.needAmount) setRefundAmount(""); }} label={o.label} desc={o.desc} disabled={disabled} />;
             })}

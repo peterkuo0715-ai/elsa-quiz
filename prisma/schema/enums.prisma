@@ -56,25 +56,34 @@ enum LedgerEntryType {
   PLATFORM_ABSORBED                 // 平台吸收差額 (商家最低保護0)
 }
 
-// 子單狀態 (PRD Section 9.2)
+// 子單狀態 (PRD v4 - 4層時間分離模型)
 enum SubOrderStatus {
-  EXPECTED_PROFIT                   // 可預期獲利訂單
-  PENDING_SHIPMENT                  // 待出貨
-  SHIPPED                           // 已出貨
-  IN_TRANSIT                        // 運送中
-  DELIVERED                         // 已送達/已取貨
-  APPRECIATION_PERIOD               // 鑑賞期倒數中
-  SETTLEABLE                        // 可結算
-  SETTLED                           // 已結算
+  // 舊狀態（保留相容性）
+  EXPECTED_PROFIT                   // (deprecated) 可預期獲利訂單
+  PENDING_SHIPMENT                  // (deprecated) 待出貨
+  SHIPPED                           // (deprecated) 已出貨
+  IN_TRANSIT                        // (deprecated) 運送中
+  DELIVERED                         // (deprecated) 已送達/已取貨
+  APPRECIATION_PERIOD               // (deprecated) 鑑賞期倒數中
+  // 新狀態 - 4層時間分離
+  PAID                              // 收單完成，等待履約
+  FULFILLMENT_COMPLETE              // 履約完成（送達確認），保留期開始
+  RETENTION_PERIOD                  // 7天保留期中
+  SETTLEABLE                        // 可結算（保留期結束，金額確認）
+  SETTLED                           // 已結算（撥款完成）
+  // 通用狀態
   DISPUTED                          // 爭議中
   CANCELLED                         // 已取消
 }
 
 // 結算狀態
 enum SettlementStatus {
-  EXPECTED                          // 可預期獲利
-  AVAILABLE                         // 可結算
-  SETTLED                           // 已結算
+  EXPECTED                          // (deprecated) 可預期獲利
+  AVAILABLE                         // (deprecated) 可結算
+  ESTIMATED                         // 預計值（保留期結束前）
+  SETTLEABLE                        // 可結算（保留期已結束）
+  PAYOUT_PENDING                    // 撥款中（進入週批次）
+  SETTLED                           // 已結算（撥款完成）
 }
 
 enum PayoutRequestStatus {
@@ -174,4 +183,9 @@ enum SnapshotType {
   EXPECTED_PROFIT         // 可預期獲利
   AVAILABLE_SETTLEMENT    // 可結算
   SETTLED                 // 已結算
+  // PRD v4 新增
+  RETENTION_START         // 保留期開始
+  SETTLEABLE_RELEASED     // 保留期結束，可結算
+  PAYOUT_QUEUED           // 進入撥款批次
+  PAYOUT_COMPLETED        // 撥款完成
 }

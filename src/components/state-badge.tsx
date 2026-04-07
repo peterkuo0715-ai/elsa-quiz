@@ -11,14 +11,19 @@ import { DISPUTE_STATUS_LABELS } from "@/lib/state-machines/dispute.machine";
 import { BANK_ACCOUNT_CHANGE_STATUS_LABELS } from "@/lib/state-machines/bank-account-change.machine";
 
 const SUB_ORDER_STATUS_LABELS: Record<string, string> = {
+  // 舊狀態（相容）
   EXPECTED_PROFIT: "可預期獲利",
   PENDING_SHIPMENT: "待出貨",
   SHIPPED: "已出貨",
   IN_TRANSIT: "運送中",
   DELIVERED: "已送達",
   APPRECIATION_PERIOD: "鑑賞期中",
+  // PRD v4 新狀態
+  PAID: "已付款",
+  FULFILLMENT_COMPLETE: "已履約",
+  RETENTION_PERIOD: "保留期中",
   SETTLEABLE: "可結算",
-  SETTLED: "已結算",
+  SETTLED: "已撥款",
   DISPUTED: "爭議中",
   CANCELLED: "已取消",
 };
@@ -60,6 +65,10 @@ const colorMap: Record<string, string> = {
 
   // Blue - in progress
   PAID: "bg-blue-100 text-blue-800",
+  FULFILLMENT_COMPLETE: "bg-cyan-100 text-cyan-800",
+  RETENTION_PERIOD: "bg-yellow-100 text-yellow-800",
+  SETTLEABLE: "bg-green-100 text-green-800",
+  SETTLED: "bg-emerald-100 text-emerald-800",
   SHIPPED: "bg-blue-100 text-blue-800",
   DELIVERED: "bg-blue-100 text-blue-800",
 

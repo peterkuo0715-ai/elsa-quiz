@@ -13,9 +13,16 @@ model SubOrder {
   subOrderStatus                SubOrderStatus @default(EXPECTED_PROFIT)
   logisticsStatus               String?
   settlementStatus              SettlementStatus @default(EXPECTED)
-  // 鑑賞期
+  // 鑑賞期 (deprecated - 保留相容性)
   appreciationPeriodStartAt     DateTime?
   appreciationPeriodEndAt       DateTime?
+  // PRD v4: 4層時間點
+  paidAt                        DateTime?      // L1: 收單時間
+  fulfilledAt                   DateTime?      // L2: 履約完成時間
+  retentionEndAt                DateTime?      // L3 boundary: fulfilledAt + 7天
+  settleableAt                  DateTime?      // L3: 可結算時間
+  paidOutAt                     DateTime?      // L4: 實際撥款時間
+  isAmountConfirmed             Boolean        @default(false)  // false=預計值 true=確認值
   // 結算金額 (PRD Section 7)
   expectedSettlementAmount      Decimal        @db.Decimal(18, 2) @default(0)  // 可預期獲利
   availableSettlementAmount     Decimal        @db.Decimal(18, 2) @default(0)  // 可結算金額
@@ -62,6 +69,9 @@ model SubOrder {
   @@index([merchantId])
   @@index([subOrderStatus])
   @@index([settlementStatus])
+  @@index([retentionEndAt])
+  @@index([settleableAt])
+  @@index([paidOutAt])
   @@map("sub_orders")
 }
 

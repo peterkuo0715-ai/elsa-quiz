@@ -31,6 +31,47 @@ export default async function ReconciliationDetailPage({ params }: { params: Pro
         </div>
       </div>
 
+      {/* ===== PRD v4: 4層時間軸 ===== */}
+      <Card>
+        <CardHeader><CardTitle className="text-base">結算時間軸</CardTitle></CardHeader>
+        <CardContent>
+          {(() => {
+            const d = detail as Record<string, unknown>;
+            const isConfirmed = d.isAmountConfirmed as boolean;
+            const steps = [
+              { label: "收單", time: d.paidAt as string | null, done: !!d.paidAt, icon: "💳" },
+              { label: "履約完成", time: d.fulfilledAt as string | null, done: !!d.fulfilledAt, icon: "🚚" },
+              { label: "保留期截止", time: d.retentionEndAt as string | null, done: !!d.settleableAt, icon: "⏳" },
+              { label: "可結算", time: d.settleableAt as string | null, done: !!d.settleableAt, icon: "✅" },
+              { label: "已撥款", time: d.paidOutAt as string | null, done: !!d.paidOutAt, icon: "💰" },
+            ];
+            return (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  {steps.map((s, i) => (
+                    <div key={i} className="flex flex-col items-center flex-1">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${s.done ? "bg-green-100" : "bg-gray-100"}`}>
+                        {s.icon}
+                      </div>
+                      <p className={`text-xs mt-1 font-medium ${s.done ? "text-green-700" : "text-gray-400"}`}>{s.label}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {s.time ? new Date(s.time).toLocaleDateString("zh-TW") : "-"}
+                      </p>
+                      {i < steps.length - 1 && <div className="hidden" />}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${isConfirmed ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                    {isConfirmed ? "金額已確認" : "金額為預計值（保留期結束前可能變動）"}
+                  </span>
+                </div>
+              </div>
+            );
+          })()}
+        </CardContent>
+      </Card>
+
       <div className="grid gap-6 lg:grid-cols-2">
         {/* ===== 區塊一：訂單資訊 ===== */}
         <Card>
