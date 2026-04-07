@@ -28,6 +28,7 @@ export interface ProductInput {
   originalPrice: number;
   memberPrice?: number;
   campaignPrice?: number;
+  referralPrice?: number;    // PRD v3: 推薦碼價（與 VIP 同層擇一）
   quantity: number;
 }
 
@@ -43,6 +44,9 @@ export interface OrderCalculationInput {
   shippingFees: Record<string, number>;  // merchantId → shipping fee
   paymentFeeRate: number;      // 金流費率
   merchantCommissions: Record<string, { storeRate: number; categoryRate: number }>;
+  // PRD v3: 導購獎勵
+  referralRewardPerItem?: number;    // 推薦碼：每件推薦人獎勵嗨幣
+  listGuideRewardPerItem?: number;   // 清單導購：每件清單建立者獎勵嗨幣
 }
 
 export interface SubOrderResult {
@@ -63,8 +67,12 @@ export interface SubOrderResult {
   paymentFeeBase: Decimal;               // 金流費基礎 = 商品全額 + 運費
   estimatedPaymentFeeAmount: Decimal;
   invoiceFeeAmount: Decimal;             // 固定2元
+  // PRD v3: 導購獎勵成本（商家承擔）
+  referralRewardCost: Decimal;           // 推薦碼獎勵嗨幣
+  listGuideRewardCost: Decimal;          // 清單導購獎勵嗨幣
+  totalRewardDeduction: Decimal;         // 導購總扣款
   // 結果
-  merchantReceivableAmount: Decimal;     // 商家應得 (最低0)
+  merchantReceivableAmount: Decimal;     // 商家應得 (最低0，含導購扣款)
   platformAbsorbedAmount: Decimal;       // 平台吸收差額
 }
 
@@ -101,12 +109,15 @@ export interface OrderCalculationResult {
 
 export const OrderCalculationService = {
   calculate(input: OrderCalculationInput): OrderCalculationResult {
-    // Step 1-2: Final price per item (compare member/campaign, take lower)
+    // Step 1-2: Final price per item
+    // PRD v3 3.3: VIP 與推薦碼屬同層，擇一取較低者。嗨幣屬支付工具層可並存。
     const items = input.products.map((p) => {
       const original = money(p.originalPrice);
+      // 同層級價格規則：VIP(member) vs 推薦碼(referral)，擇一
       const candidates = [original];
       if (p.memberPrice != null) candidates.push(money(p.memberPrice));
       if (p.campaignPrice != null) candidates.push(money(p.campaignPrice));
+      if (p.referralPrice != null) candidates.push(money(p.referralPrice));
       const finalPrice = Decimal.min(...candidates);
 
       return {
@@ -237,13 +248,20 @@ export const OrderCalculationService = {
       // Invoice fee (PRD 6.4) - fixed 2/sub-order
       const invoiceFee = money(2);
 
-      // Merchant receivable (PRD 7.1)
-      // = settlementBase - storeComm - categoryComm - paymentFee - invoiceFee + shipping
+      // PRD v3: 導購獎勵成本（商家承擔）
+      const itemCount = merchantItems.reduce((s, i) => s + i.quantity, 0);
+      const referralRewardCost = input.referralRewardPerItem ? moneyRound(moneyMul(money(input.referralRewardPerItem), itemCount)) : ZERO;
+      const listGuideRewardCost = input.listGuideRewardPerItem ? moneyRound(moneyMul(money(input.listGuideRewardPerItem), itemCount)) : ZERO;
+      const totalRewardDeduction = moneyRound(referralRewardCost.plus(listGuideRewardCost));
+
+      // Merchant receivable (PRD v3 7.1)
+      // = settlementBase - storeComm - categoryComm - paymentFee - invoiceFee - rewardDeduction + shipping
       let merchantReceivable = subSettlementBase
         .minus(storeCommission)
         .minus(categoryCommission)
         .minus(paymentFee)
         .minus(invoiceFee)
+        .minus(totalRewardDeduction)
         .plus(shipping);
       merchantReceivable = moneyRound(merchantReceivable);
 
@@ -283,6 +301,9 @@ export const OrderCalculationService = {
         paymentFeeBase: paymentFeeBase,
         estimatedPaymentFeeAmount: paymentFee,
         invoiceFeeAmount: invoiceFee,
+        referralRewardCost,
+        listGuideRewardCost,
+        totalRewardDeduction,
         merchantReceivableAmount: merchantReceivable,
         platformAbsorbedAmount: platformAbsorbed,
       });

@@ -40,7 +40,11 @@ model SubOrder {
   paymentFeeAdjustmentAmount    Decimal        @db.Decimal(18, 2) @default(0)
   // 發票費 (PRD Section 6.4) - 固定2元/子單，不可退
   invoiceFeeAmount              Decimal        @db.Decimal(18, 2) @default(2)
-  // 商家應得 (PRD Section 7.1)
+  // PRD v3: 導購獎勵成本（商家承擔）
+  referralRewardCost            Decimal        @db.Decimal(18, 2) @default(0)
+  listGuideRewardCost           Decimal        @db.Decimal(18, 2) @default(0)
+  totalRewardDeduction          Decimal        @db.Decimal(18, 2) @default(0)
+  // 商家應得 (PRD Section 7.1) — 含導購扣款
   merchantReceivableAmount      Decimal        @db.Decimal(18, 2) @default(0)
   // 平台吸收差額 (PRD Section 7.2, 商家最低0)
   platformAbsorbedAmount        Decimal        @db.Decimal(18, 2) @default(0)

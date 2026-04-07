@@ -1,0 +1,33 @@
+// ============================================================
+// Reward Transactions (PRD v3 Section 9 - 導購獎勵共通)
+// ============================================================
+
+model RewardTransaction {
+  id                              String    @id @default(cuid())
+  orderId                         String?
+  subOrderId                      String?
+  subOrderItemId                  String?
+  // 獎勵來源與對象
+  rewardSourceType                String    // REFERRAL | LIST_GUIDE
+  rewardTargetUserId              String?   // 推薦人 or 清單建立者
+  // 金額
+  rewardExpectedHiCoinAmount      Decimal   @db.Decimal(18, 2) @default(0)  // 預計值
+  rewardActualHiCoinAmount        Decimal   @db.Decimal(18, 2) @default(0)  // 實發值
+  // 狀態
+  rewardStatus                    String    @default("PENDING")  // PENDING | CONFIRMED | CANCELLED
+  rewardFundedBy                  String    @default("MERCHANT") // 商家承擔
+  // 結算扣款
+  rewardSettlementDeductionAmount Decimal   @db.Decimal(18, 2) @default(0)
+  // 歸因
+  attributionSourceId             String?   // 推薦碼ID 或 清單ID
+  attributionLockedFlag           Boolean   @default(true)
+  // 時間
+  createdAt                       DateTime  @default(now())
+  updatedAt                       DateTime  @updatedAt
+
+  @@index([orderId])
+  @@index([subOrderId])
+  @@index([rewardSourceType])
+  @@index([rewardStatus])
+  @@map("reward_transactions")
+}

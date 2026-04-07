@@ -31,6 +31,7 @@ interface ExecuteParams {
   l1: "single" | "multi";
   lShipping: "shipping_paid" | "free_shipping";
   l2: "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
+  lGuide: "no_guide" | "referral" | "list_guide";
   l3: "full_pay" | "installment";
   l4: "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
   refundAmount?: number;
@@ -45,23 +46,38 @@ async function execute(params: ExecuteParams) {
   const hasHiCoin = params.l2 !== "cash";
   const hasPlatformCoupon = params.l2 === "hicoin_platform_coupon";
   const hasMerchantCoupon = params.l2 === "hicoin_merchant_coupon";
+  const isReferral = params.lGuide === "referral";
+  const isListGuide = params.lGuide === "list_guide";
   const isInstallment = params.l3 === "installment";
   const paymentFeeRate = isInstallment ? 0.035 : 0.02;
 
+  // PRD v3: 推薦碼價 = 原價 × 90%（10%折扣），與 VIP 同層擇一
   const products = isSingle
-    ? [{ productName: "藍芽耳機", merchantId: m.id, originalPrice: 1500, memberPrice: 1400, quantity: 1 }]
+    ? [{
+        productName: "藍芽耳機", merchantId: m.id, originalPrice: 1500, memberPrice: 1400,
+        ...(isReferral ? { referralPrice: 1350 } : {}),  // 1500 × 90% = 1350
+        quantity: 1,
+      }]
     : [
-        { productName: "藍芽耳機", merchantId: m.id, originalPrice: 1500, memberPrice: 1400, quantity: 1 },
-        { productName: "耳機保護殼", merchantId: m.id, originalPrice: 500, campaignPrice: 450, quantity: 1 },
+        {
+          productName: "藍芽耳機", merchantId: m.id, originalPrice: 1500, memberPrice: 1400,
+          ...(isReferral ? { referralPrice: 1350 } : {}),
+          quantity: 1,
+        },
+        {
+          productName: "耳機保護殼", merchantId: m.id, originalPrice: 500, campaignPrice: 450,
+          ...(isReferral ? { referralPrice: 450 } : {}),  // 500 × 90% = 450（跟活動價一樣）
+          quantity: 1,
+        },
       ];
 
-  const coupons = [];
-  if (hasPlatformCoupon) coupons.push({ type: "PLATFORM" as const, amount: 100 });
-  if (hasMerchantCoupon) coupons.push({ type: "MERCHANT" as const, amount: 100 });
+  const coupons: Array<{ type: "PLATFORM" | "MERCHANT"; amount: number }> = [];
+  if (hasPlatformCoupon) coupons.push({ type: "PLATFORM", amount: 100 });
+  if (hasMerchantCoupon) coupons.push({ type: "MERCHANT", amount: 100 });
 
   const hiCoinUsed = hasHiCoin ? 200 : 0;
 
-  // === Run calculation engine (PRD Section 4) ===
+  // === Run calculation engine (PRD v3) ===
   const calc = OrderCalculationService.calculate({
     products,
     coupons,
@@ -69,6 +85,9 @@ async function execute(params: ExecuteParams) {
     shippingFees: { [m.id]: params.lShipping === "free_shipping" ? 0 : 80 },
     paymentFeeRate,
     merchantCommissions: { [m.id]: { storeRate: 0.03, categoryRate: 0.02 } },
+    // PRD v3: 導購獎勵
+    referralRewardPerItem: isReferral ? 50 : undefined,    // 推薦人獎勵 50嗨幣/件
+    listGuideRewardPerItem: isListGuide ? 80 : undefined,  // 清單建立者獎勵 80嗨幣/件
   });
 
   const so = calc.subOrders[0]; // single merchant → one sub-order
@@ -144,6 +163,9 @@ async function execute(params: ExecuteParams) {
       categoryCommissionAmount: moneyToString(so.categoryCommissionAmount),
       estimatedPaymentFeeAmount: moneyToString(so.estimatedPaymentFeeAmount),
       invoiceFeeAmount: moneyToString(so.invoiceFeeAmount),
+      referralRewardCost: moneyToString(so.referralRewardCost),
+      listGuideRewardCost: moneyToString(so.listGuideRewardCost),
+      totalRewardDeduction: moneyToString(so.totalRewardDeduction),
       merchantReceivableAmount: moneyToString(so.merchantReceivableAmount),
       platformAbsorbedAmount: moneyToString(so.platformAbsorbedAmount),
       items: {
@@ -208,7 +230,10 @@ async function execute(params: ExecuteParams) {
   if (!calc.totalMerchantCouponAmount.isZero()) details.push(`   商家券: -${calc.totalMerchantCouponAmount}（影響抽成基礎）`);
   details.push(`   付款: 台幣${calc.cashTotalPaid}${!calc.hiCoinTotalUsed.isZero() ? ` + 嗨幣${calc.hiCoinTotalUsed}` : ""} | ${isInstallment ? "分期" : "一次付清"} | 嗨幣上限${calc.hiCoinMaxUsableAmount}`);
   details.push(`   結算基礎: ${so.subOrderSettlementBaseAmount} | 商店抽成${so.storeCommissionAmount}(${so.storeCommissionRate.times(100)}%) + 分類抽成${so.categoryCommissionAmount}(${so.categoryCommissionRate.times(100)}%)`);
-  details.push(`   金流費: ${so.estimatedPaymentFeeAmount} (基礎: 商品${so.subOrderFinalItemAmount}+運費${so.subOrderShippingFee}=${so.paymentFeeBase}) | 發票費: ${so.invoiceFeeAmount}(不可退) | 運費: ${so.subOrderShippingFee}`);
+  details.push(`   金流費: ${so.estimatedPaymentFeeAmount} (基礎: ${so.paymentFeeBase}) | 發票費: ${so.invoiceFeeAmount}(不可退) | 運費: ${so.subOrderShippingFee}`);
+  if (!so.totalRewardDeduction.isZero()) {
+    details.push(`   🎁 導購獎勵扣款: ${so.totalRewardDeduction}${!so.referralRewardCost.isZero() ? ` (推薦碼${so.referralRewardCost})` : ""}${!so.listGuideRewardCost.isZero() ? ` (清單導購${so.listGuideRewardCost})` : ""} — 商家承擔`);
+  }
   details.push(`   商家應得: ${so.merchantReceivableAmount}${!so.platformAbsorbedAmount.isZero() ? ` (平台吸收${so.platformAbsorbedAmount})` : ""}`);
 
   switch (params.l4) {
@@ -275,12 +300,17 @@ async function execute(params: ExecuteParams) {
       const refundAmount = money(params.refundAmount || 500);
       const label = params.l4 === "adjudicated" ? "平台裁決退款" : "協商退款";
 
-      // 結算基礎扣除退款金額後，重新跑一次完整計算
+      // PRD v3 6.2: 退款後剩餘嗨幣按原支付結構比例縮放保留
+      const totalProduct = so.subOrderFinalItemAmount;
+      const remainingRatio = totalProduct.isZero() ? ZERO : moneySub(totalProduct, refundAmount).dividedBy(totalProduct);
+      const remainingHiCoin = Number(moneyMul(so.subOrderHiCoinAllocated, remainingRatio).floor().toString());
+
+      // 結算基礎扣除退款金額後，重新跑一次完整計算（含剩餘嗨幣）
       const newSettlementBase = moneyRound(moneySub(so.subOrderSettlementBaseAmount, refundAmount));
       const remainingCalc = OrderCalculationService.calculate({
         products: [{ productName: "退款後剩餘", merchantId: m.id, originalPrice: Number(newSettlementBase.toString()), quantity: 1 }],
         coupons: [],
-        hiCoinUsed: 0,  // 嗨幣已在原始計算處理，退款後不再重算嗨幣
+        hiCoinUsed: remainingHiCoin,  // PRD v3: 剩餘嗨幣按比例保留
         shippingFees: { [m.id]: params.lShipping === "free_shipping" ? 0 : 80 },
         paymentFeeRate: isInstallment ? 0.035 : 0.02,
         merchantCommissions: { [m.id]: { storeRate: 0.03, categoryRate: 0.02 } },
@@ -290,9 +320,8 @@ async function execute(params: ExecuteParams) {
       const merchantDebit = moneyRound(moneySub(receivable, newReceivable));
 
       // Consumer refund: 退款金額按原始台幣/嗨幣比例退回（整數化）
-      const totalProduct = so.subOrderFinalItemAmount;
-      const ratio = totalProduct.isZero() ? ZERO : refundAmount.dividedBy(totalProduct);
-      const hiCoinRefund = hasHiCoin ? moneyMul(so.subOrderHiCoinAllocated, ratio).floor() : ZERO;
+      const refundRatio = totalProduct.isZero() ? ZERO : refundAmount.dividedBy(totalProduct);
+      const hiCoinRefund = hasHiCoin ? moneyMul(so.subOrderHiCoinAllocated, refundRatio).floor() : ZERO;
       const cashRefund = moneyRound(moneySub(refundAmount, hiCoinRefund));
       consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
 

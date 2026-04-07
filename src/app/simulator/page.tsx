@@ -10,6 +10,7 @@ const INITIAL: ConsumerAccount = { cash: 50000, hiCoin: 1000 };
 type L1 = "single" | "multi";
 type LShipping = "shipping_paid" | "free_shipping";
 type L2 = "cash" | "hicoin" | "hicoin_platform_coupon" | "hicoin_merchant_coupon";
+type LGuide = "no_guide" | "referral" | "list_guide";
 type L3 = "full_pay" | "installment";
 type L4 = "settled" | "pending" | "dispute" | "negotiated" | "full_refund" | "adjudicated" | "partial_return";
 
@@ -26,6 +27,11 @@ const L2_OPTIONS: Array<{ id: L2; label: string; desc: string }> = [
   { id: "hicoin", label: "台幣 + 嗨幣", desc: "嗨幣折抵200 (平台吸收)" },
   { id: "hicoin_platform_coupon", label: "嗨幣 + 平台券", desc: "嗨幣200 + 平台券-100 (不影響抽成)" },
   { id: "hicoin_merchant_coupon", label: "嗨幣 + 商家券", desc: "嗨幣200 + 商家券-100 (影響抽成基礎)" },
+];
+const GUIDE_OPTIONS: Array<{ id: LGuide; label: string; desc: string }> = [
+  { id: "no_guide", label: "無導購", desc: "一般購買，無推薦/導購" },
+  { id: "referral", label: "推薦碼", desc: "推薦碼折扣10%，推薦人獎勵50嗨幣/件（商家出）" },
+  { id: "list_guide", label: "清單導購", desc: "不改變價格，清單建立者獎勵80嗨幣/件（商家出）" },
 ];
 const L3_OPTIONS: Array<{ id: L3; label: string; desc: string }> = [
   { id: "full_pay", label: "一次付清", desc: "金流費 2%" },
@@ -46,6 +52,7 @@ export default function SimulatorPage() {
   const [l1, setL1] = useState<L1 | null>(null);
   const [lShipping, setLShipping] = useState<LShipping | null>(null);
   const [l2, setL2] = useState<L2 | null>(null);
+  const [lGuide, setLGuide] = useState<LGuide | null>(null);
   const [l3, setL3] = useState<L3 | null>(null);
   const [l4, setL4] = useState<L4 | null>(null);
   const [refundAmount, setRefundAmount] = useState("");
@@ -54,7 +61,7 @@ export default function SimulatorPage() {
   const [results, setResults] = useState<Array<{ orderNumber: string; details: string }>>([]);
 
   const needsAmount = l4 === "negotiated" || l4 === "adjudicated";
-  const canExecute = l1 && lShipping && l2 && l3 && l4 && (!needsAmount || Number(refundAmount) > 0);
+  const canExecute = l1 && lShipping && l2 && lGuide && l3 && l4 && (!needsAmount || Number(refundAmount) > 0);
 
   async function handleExecute() {
     if (!canExecute) return;
@@ -63,7 +70,7 @@ export default function SimulatorPage() {
       const res = await fetch("/api/simulator", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "execute", l1, lShipping, l2, l3, l4,
+          action: "execute", l1, lShipping, l2, lGuide, l3, l4,
           ...(needsAmount ? { refundAmount: Number(refundAmount) } : {}),
         }),
       });
@@ -94,7 +101,7 @@ export default function SimulatorPage() {
     setResetting(true);
     await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset" }) });
     setConsumer({ ...INITIAL });
-    setL1(null); setLShipping(null); setL2(null); setL3(null); setL4(null);
+    setL1(null); setLShipping(null); setL2(null); setLGuide(null); setL3(null); setL4(null);
     setRefundAmount("");
     setResults([]);
     setResetting(false);
@@ -160,6 +167,14 @@ export default function SimulatorPage() {
           <h2 className="text-xs font-semibold text-gray-400 uppercase mb-2">L2 付款金額</h2>
           <div className="grid grid-cols-2 gap-3">
             {L2_OPTIONS.map((o) => <Card key={o.id} selected={l2 === o.id} onClick={() => setL2(o.id)} label={o.label} desc={o.desc} />)}
+          </div>
+        </div>
+
+        {/* Guide Source */}
+        <div>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase mb-2">導購來源 <span className="text-green-600">(PRD v3)</span></h2>
+          <div className="grid grid-cols-3 gap-3">
+            {GUIDE_OPTIONS.map((o) => <Card key={o.id} selected={lGuide === o.id} onClick={() => setLGuide(o.id)} label={o.label} desc={o.desc} />)}
           </div>
         </div>
 

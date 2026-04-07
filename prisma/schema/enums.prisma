@@ -29,6 +29,9 @@ enum LedgerEntryType {
   SHIPPING_INCOME                   // 運費收入
   // HiCoin
   HI_COIN_PLATFORM_SUBSIDY          // 平台嗨幣補貼（記錄用）
+  // Rewards (PRD v3)
+  REFERRAL_REWARD_DEDUCTION         // 推薦碼獎勵扣款（商家承擔）
+  LIST_GUIDE_REWARD_DEDUCTION       // 清單導購獎勵扣款（商家承擔）
   // Refund
   REFUND_DEBIT                      // 全額退款扣回
   PARTIAL_REFUND_DEBIT              // 部分退款扣回

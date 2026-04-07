@@ -1,0 +1,35 @@
+// ============================================================
+// Referral Codes (PRD v3 Section 7)
+// ============================================================
+
+model ReferralCode {
+  id                  String    @id @default(cuid())
+  code                String    @unique
+  merchantId          String
+  // 折扣設定（折扣率或固定折抵，擇一）
+  discountType        String    @default("RATE")    // RATE | FIXED
+  discountValue       Decimal   @db.Decimal(18, 4) @default(0) // 折扣率(0.1=10%) 或固定金額
+  // 推薦人獎勵（預設值，可被商品級覆蓋）
+  defaultRewardHiCoin Decimal   @db.Decimal(18, 2) @default(0)
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  productOverrides ReferralCodeProduct[]
+
+  @@index([merchantId])
+  @@map("referral_codes")
+}
+
+model ReferralCodeProduct {
+  id               String       @id @default(cuid())
+  referralCodeId   String
+  referralCode     ReferralCode @relation(fields: [referralCodeId], references: [id])
+  productId        String
+  // 商品級獎勵覆蓋推薦碼預設值
+  productRewardHiCoin Decimal   @db.Decimal(18, 2) @default(0)
+  createdAt        DateTime     @default(now())
+
+  @@index([referralCodeId])
+  @@map("referral_code_products")
+}

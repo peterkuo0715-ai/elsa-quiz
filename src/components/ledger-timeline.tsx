@@ -29,6 +29,8 @@ const entryTypeLabels: Record<LedgerEntryType, string> = {
   INVOICE_FEE_CHARGED: "發票費",
   SHIPPING_INCOME: "運費入帳",
   HI_COIN_PLATFORM_SUBSIDY: "嗨幣補貼(記錄)",
+  REFERRAL_REWARD_DEDUCTION: "推薦碼獎勵扣款",
+  LIST_GUIDE_REWARD_DEDUCTION: "清單導購獎勵扣款",
   REFUND_DEBIT: "退款扣回",
   PARTIAL_REFUND_DEBIT: "部分退款扣回",
   REFUND_COMMISSION_RETURN: "退款抽成返還",

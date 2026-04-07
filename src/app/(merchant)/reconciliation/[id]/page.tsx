@@ -114,6 +114,13 @@ export default async function ReconciliationDetailPage({ params }: { params: Pro
 
             <Row label="發票費（固定，不可退）" value={<span className="text-red-600">-{Number(detail.invoiceFeeAmount.toString()).toLocaleString()}</span>} />
 
+            {Number(detail.referralRewardCost?.toString() || "0") > 0 && (
+              <Row label="推薦碼獎勵成本（商家承擔）" value={<span className="text-orange-600">-{Number(detail.referralRewardCost.toString()).toLocaleString()}</span>} />
+            )}
+            {Number(detail.listGuideRewardCost?.toString() || "0") > 0 && (
+              <Row label="清單導購獎勵成本（商家承擔）" value={<span className="text-orange-600">-{Number(detail.listGuideRewardCost.toString()).toLocaleString()}</span>} />
+            )}
+
             <Separator />
             <p className="text-xs text-muted-foreground">加項</p>
 

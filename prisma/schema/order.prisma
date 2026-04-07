@@ -59,6 +59,12 @@ model OrderItem {
   // 嗨幣
   hiCoinAllocableAmount     Decimal   @db.Decimal(18, 2) @default(0)  // 可折抵基礎
   hiCoinAllocatedAmount     Decimal   @db.Decimal(18, 2) @default(0)  // 實際分攤嗨幣
+  // PRD v3: 價格規則與導購
+  priceRuleType             String    @default("ORIGINAL")            // ORIGINAL | VIP | REFERRAL
+  referralCodeId            String?                                    // 推薦碼 ID
+  referralDiscountAmount    Decimal   @db.Decimal(18, 2) @default(0)  // 推薦碼折扣金額
+  listGuideId               String?                                    // 清單導購 ID
+  listGuideAttributionId    String?                                    // 歸因來源 ID
   // 商品名稱（展示用）
   productName               String    @default("")
   // 退款狀態
