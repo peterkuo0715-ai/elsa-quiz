@@ -272,42 +272,63 @@ async function execute(params: ExecuteParams) {
 
     case "negotiated":
     case "adjudicated": {
-      const amount = money(params.refundAmount || 500);
+      const refundAmount = money(params.refundAmount || 500);
       const label = params.l4 === "adjudicated" ? "平台裁決退款" : "協商退款";
-      const totalProduct = so.subOrderFinalItemAmount;
-      const ratio = totalProduct.isZero() ? ZERO : amount.dividedBy(totalProduct);
 
-      // Merchant debit proportional to receivable
-      const merchantDebit = moneyRound(moneyMul(receivable, ratio));
+      // 結算基礎扣除退款金額後，重新跑一次完整計算
+      const newSettlementBase = moneyRound(moneySub(so.subOrderSettlementBaseAmount, refundAmount));
+      const remainingCalc = OrderCalculationService.calculate({
+        products: [{ productName: "退款後剩餘", merchantId: m.id, originalPrice: Number(newSettlementBase.toString()), quantity: 1 }],
+        coupons: [],
+        hiCoinUsed: 0,  // 嗨幣已在原始計算處理，退款後不再重算嗨幣
+        shippingFees: { [m.id]: params.lShipping === "free_shipping" ? 0 : 80 },
+        paymentFeeRate: isInstallment ? 0.035 : 0.02,
+        merchantCommissions: { [m.id]: { storeRate: 0.03, categoryRate: 0.02 } },
+      });
+      const newSo = remainingCalc.subOrders[0];
+      const newReceivable = newSo.merchantReceivableAmount;
+      const merchantDebit = moneyRound(moneySub(receivable, newReceivable));
+
+      // Consumer refund: 退款金額按原始台幣/嗨幣比例退回（整數化）
+      const totalProduct = so.subOrderFinalItemAmount;
+      const ratio = totalProduct.isZero() ? ZERO : refundAmount.dividedBy(totalProduct);
+      const hiCoinRefund = hasHiCoin ? moneyMul(so.subOrderHiCoinAllocated, ratio).floor() : ZERO;
+      const cashRefund = moneyRound(moneySub(refundAmount, hiCoinRefund));
+      consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
+
+      // Ledger
       await LedgerService.createEntry(TX(), {
         walletId: m.wallet!.id, bucket: WalletBucket.AVAILABLE,
         entryType: LedgerEntryType.PARTIAL_REFUND_DEBIT, amount: merchantDebit.negated(),
         amountTaxIncl: merchantDebit.negated(), amountTaxExcl: merchantDebit.negated(), taxAmount: ZERO,
         referenceType: ReferenceType.SUB_ORDER, referenceId: subOrder.id,
-        idempotencyKey: `sim-negref-${subOrder.id}`, description: `${label} NT$${amount}`,
+        idempotencyKey: `sim-negref-${subOrder.id}`, description: `${label} NT$${refundAmount}，重算結算基礎`,
       });
 
-      // Consumer refund: proportional cash + hicoin
-      const hiCoinRefund = hasHiCoin ? moneyRound(moneyMul(so.subOrderHiCoinAllocated, ratio)) : ZERO;
-      const cashRefund = moneyRound(moneySub(amount, hiCoinRefund));
-      consumerRefund = { cash: cashRefund, hiCoin: hiCoinRefund };
-
-      // Update sub_order 金額
-      const newReceivable1 = moneyRound(moneySub(receivable, merchantDebit));
+      // Update sub_order 全部欄位（跟部分退貨一樣用重算結果）
       await prisma.subOrder.update({ where: { id: subOrder.id }, data: {
-        merchantReceivableAmount: moneyToString(newReceivable1),
-        availableSettlementAmount: moneyToString(newReceivable1),
+        merchantReceivableAmount: moneyToString(newReceivable),
+        availableSettlementAmount: moneyToString(newReceivable),
+        subOrderSettlementBaseAmount: moneyToString(newSettlementBase),
+        storeCommissionAmount: moneyToString(newSo.storeCommissionAmount),
+        categoryCommissionAmount: moneyToString(newSo.categoryCommissionAmount),
+        estimatedPaymentFeeAmount: moneyToString(newSo.estimatedPaymentFeeAmount),
       } });
       await prisma.settlementSnapshot.create({ data: {
         subOrderId: subOrder.id, snapshotType: SnapshotType.AVAILABLE_SETTLEMENT,
-        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable1),
-        reasonCode: params.l4 === "adjudicated" ? "ADJUDICATED_REFUND" : "NEGOTIATED_REFUND",
-        reasonDetail: `${label} NT$${amount}`,
+        amountBefore: moneyToString(receivable), amountAfter: moneyToString(newReceivable),
+        reasonCode: params.l4 === "adjudicated" ? "ADJUDICATED_REFUND_RECALC" : "NEGOTIATED_REFUND_RECALC",
+        reasonDetail: `${label} NT$${refundAmount}，結算基礎 ${so.subOrderSettlementBaseAmount} → ${newSettlementBase}`,
       } });
 
-      details.push(`\n🤝 ${label}: 退消費者 NT$${amount} (台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""})`);
-      details.push(`   商家扣回: ${merchantDebit}（按比例: ${amount}/${totalProduct} × 應得${receivable}）`);
-      details.push(`   商家應得更新: ${receivable} → ${newReceivable1}`);
+      details.push(`\n🤝 ${label}: 退消費者 NT$${refundAmount} (台幣${cashRefund}${!hiCoinRefund.isZero() ? ` + 嗨幣${hiCoinRefund}` : ""})`);
+      details.push(`\n🔄 重算結算（結算基礎扣除退款金額）:`);
+      details.push(`   結算基礎: ${so.subOrderSettlementBaseAmount} → ${newSettlementBase}`);
+      details.push(`   商店抽成: ${so.storeCommissionAmount} → ${newSo.storeCommissionAmount}`);
+      details.push(`   分類抽成: ${so.categoryCommissionAmount} → ${newSo.categoryCommissionAmount}`);
+      details.push(`   金流費: ${so.estimatedPaymentFeeAmount} → ${newSo.estimatedPaymentFeeAmount} (基礎: ${newSo.paymentFeeBase})`);
+      details.push(`   商家應得: ${receivable} → ${newReceivable}`);
+      details.push(`   商家扣回: ${merchantDebit}`);
       details.push(`   發票費 ${so.invoiceFeeAmount} 不退${params.l4 === "adjudicated" ? " [平台裁決]" : ""}`);
       break;
     }
