@@ -214,6 +214,13 @@ export default function SimulatorPage() {
           {loading ? <Loader2 className="inline h-5 w-5 animate-spin" /> : "執行"}
         </button>
 
+        {/* Link to rewards simulator */}
+        <div className="text-center">
+          <a href="/simulator-rewards" className="inline-flex items-center gap-2 rounded-md border-2 border-dashed border-purple-300 px-4 py-2 text-sm text-purple-600 hover:border-purple-500 hover:text-purple-800 transition-colors">
+            🎁 導購獎勵模擬器（推薦碼 / 清單導購）
+          </a>
+        </div>
+
         {/* Results */}
         {results.length > 0 && (
           <div className="space-y-3">

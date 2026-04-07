@@ -10,7 +10,7 @@ export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Public routes - no auth required
-  const publicRoutes = ["/login", "/simulator", "/api/webhooks", "/api/auth", "/api/simulator"];
+  const publicRoutes = ["/login", "/simulator", "/simulator-rewards", "/api/webhooks", "/api/auth", "/api/simulator"];
   if (publicRoutes.some((r) => pathname.startsWith(r))) {
     return NextResponse.next();
   }
