@@ -90,3 +90,64 @@ export async function getPendingActions(merchantId: string) {
     frozenReason: wallet?.frozenReason || null,
   };
 }
+
+export async function getRecentSubOrders(merchantId: string, limit: number = 5) {
+  const subOrders = await prisma.subOrder.findMany({
+    where: { merchantId },
+    orderBy: { createdAt: "desc" },
+    take: limit,
+    select: {
+      id: true,
+      subOrderStatus: true,
+      subOrderFinalItemAmount: true,
+      storeCommissionAmount: true,
+      storeCommissionRate: true,
+      categoryCommissionAmount: true,
+      categoryCommissionRate: true,
+      estimatedPaymentFeeAmount: true,
+      invoiceFeeAmount: true,
+      subOrderShippingFee: true,
+      merchantReceivableAmount: true,
+      isAmountConfirmed: true,
+      paidAt: true,
+      referralRewardCost: true,
+      listGuideRewardCost: true,
+      order: {
+        select: { orderNumber: true },
+      },
+      items: {
+        select: {
+          id: true,
+          quantity: true,
+          orderItem: {
+            select: { productName: true },
+          },
+        },
+      },
+    },
+  });
+
+  return subOrders.map((so) => ({
+    id: so.id,
+    orderNumber: so.order.orderNumber,
+    subOrderStatus: so.subOrderStatus,
+    items: so.items.map((item) => ({
+      id: item.id,
+      productName: item.orderItem.productName,
+      quantity: item.quantity,
+    })),
+    subOrderFinalItemAmount: so.subOrderFinalItemAmount.toString(),
+    storeCommissionAmount: so.storeCommissionAmount.toString(),
+    storeCommissionRate: so.storeCommissionRate.toString(),
+    categoryCommissionAmount: so.categoryCommissionAmount.toString(),
+    categoryCommissionRate: so.categoryCommissionRate.toString(),
+    estimatedPaymentFeeAmount: so.estimatedPaymentFeeAmount.toString(),
+    invoiceFeeAmount: so.invoiceFeeAmount.toString(),
+    subOrderShippingFee: so.subOrderShippingFee.toString(),
+    merchantReceivableAmount: so.merchantReceivableAmount.toString(),
+    isAmountConfirmed: so.isAmountConfirmed,
+    paidAt: so.paidAt,
+    referralRewardCost: so.referralRewardCost.toString(),
+    listGuideRewardCost: so.listGuideRewardCost.toString(),
+  }));
+}

@@ -2,8 +2,9 @@ export const dynamic = "force-dynamic";
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getWalletBalances, getRecentLedgerEntries } from "@/server/queries/wallet.queries";
-import { getProjectedIncome, getDailyTrend, getPendingActions } from "@/server/queries/dashboard.queries";
+import { getProjectedIncome, getDailyTrend, getPendingActions, getRecentSubOrders } from "@/server/queries/dashboard.queries";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { LedgerTimeline } from "@/components/ledger-timeline";
@@ -25,6 +26,7 @@ import {
   Package,
   CalendarClock,
   CreditCard,
+  Receipt,
 } from "lucide-react";
 
 export default async function MerchantDashboard() {
@@ -33,7 +35,7 @@ export default async function MerchantDashboard() {
 
   const merchantId = session.user.merchantId;
 
-  const [balances, projected, trend7, trend30, pending, recentEntries] =
+  const [balances, projected, trend7, trend30, pending, recentEntries, recentSubOrders] =
     await Promise.all([
       getWalletBalances(merchantId),
       getProjectedIncome(merchantId),
@@ -41,6 +43,7 @@ export default async function MerchantDashboard() {
       getDailyTrend(merchantId, 30),
       getPendingActions(merchantId),
       getRecentLedgerEntries(merchantId, 10),
+      getRecentSubOrders(merchantId, 5),
     ]);
 
   const alerts: Array<{ icon: typeof AlertTriangle; message: string; type: "error" | "warning" }> = [];
@@ -190,6 +193,108 @@ export default async function MerchantDashboard() {
               <p className="mt-1 text-xs text-muted-foreground">{projected.settleable.count} 筆・確認值</p>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* ===== Layer 2.5: Recent Sub-Order Fee Waterfall ===== */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Receipt className="h-4 w-4 text-purple-500" />
+              最近結算明細
+            </CardTitle>
+            <Link href="/reconciliation" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+              查看全部 <ArrowRight className="ml-0.5 inline h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {recentSubOrders.length === 0 ? (
+            <p className="text-sm text-muted-foreground py-4 text-center">尚無結算明細</p>
+          ) : (
+            recentSubOrders.map((so) => (
+              <Card key={so.id} className="border shadow-none">
+                <CardContent className="pt-4 pb-4">
+                  {/* Header: order number, product names, badge */}
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Link
+                          href={`/reconciliation/${so.id}`}
+                          className="text-sm font-medium text-blue-600 hover:underline"
+                        >
+                          訂單 {so.orderNumber}
+                        </Link>
+                        <Badge variant={so.isAmountConfirmed ? "default" : "secondary"}>
+                          {so.isAmountConfirmed ? "確認值" : "預計值"}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 text-xs text-muted-foreground truncate">
+                        {so.items.map((item) => `${item.productName} x ${item.quantity}`).join(", ")}
+                      </p>
+                    </div>
+                    {so.paidAt && (
+                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                        {format(new Date(so.paidAt), "MM/dd HH:mm", { locale: zhTW })}
+                      </span>
+                    )}
+                  </div>
+
+                  <Separator className="mb-3" />
+
+                  {/* Fee waterfall */}
+                  <div className="space-y-1.5 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-muted-foreground">成交金額</span>
+                      <span className="font-medium">{moneyFormat(so.subOrderFinalItemAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-red-600">
+                      <span>- 商店抽成({(Number(so.storeCommissionRate) * 100).toFixed(1)}%)</span>
+                      <span>-{moneyFormat(so.storeCommissionAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-red-600">
+                      <span>- 分類抽成({(Number(so.categoryCommissionRate) * 100).toFixed(1)}%)</span>
+                      <span>-{moneyFormat(so.categoryCommissionAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-red-600">
+                      <span>- 金流費</span>
+                      <span>-{moneyFormat(so.estimatedPaymentFeeAmount)}</span>
+                    </div>
+                    <div className="flex items-center justify-between text-red-600">
+                      <span>- 發票費</span>
+                      <span>-{moneyFormat(so.invoiceFeeAmount)}</span>
+                    </div>
+                    {Number(so.referralRewardCost) > 0 && (
+                      <div className="flex items-center justify-between text-red-600">
+                        <span>- 推薦導購獎勵</span>
+                        <span>-{moneyFormat(so.referralRewardCost)}</span>
+                      </div>
+                    )}
+                    {Number(so.listGuideRewardCost) > 0 && (
+                      <div className="flex items-center justify-between text-red-600">
+                        <span>- 清單導購獎勵</span>
+                        <span>-{moneyFormat(so.listGuideRewardCost)}</span>
+                      </div>
+                    )}
+                    {Number(so.subOrderShippingFee) > 0 && (
+                      <div className="flex items-center justify-between text-green-600">
+                        <span>+ 運費</span>
+                        <span>+{moneyFormat(so.subOrderShippingFee)}</span>
+                      </div>
+                    )}
+
+                    <Separator className="my-1.5" />
+
+                    <div className="flex items-center justify-between">
+                      <span className="font-bold text-base">商家應得</span>
+                      <span className="font-bold text-base">{moneyFormat(so.merchantReceivableAmount)}</span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          )}
         </CardContent>
       </Card>
 
