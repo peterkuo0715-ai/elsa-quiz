@@ -5,7 +5,10 @@ import Link from "next/link";
 import { ArrowLeft, RotateCcw, Loader2, Wallet, Coins } from "lucide-react";
 
 interface ConsumerAccount { cash: number; hiCoin: number; }
+interface RewardAccount { hiCoin: number; expectedHiCoin: number; }
 const INITIAL: ConsumerAccount = { cash: 50000, hiCoin: 1000 };
+const INITIAL_REFERRER: RewardAccount = { hiCoin: 0, expectedHiCoin: 0 };
+const INITIAL_LIST_CREATOR: RewardAccount = { hiCoin: 0, expectedHiCoin: 0 };
 
 type L1 = "single" | "multi";
 type LShipping = "shipping_paid" | "free_shipping";
@@ -49,6 +52,8 @@ const L4_OPTIONS: Array<{ id: L4; label: string; desc: string; needAmount?: bool
 
 export default function SimulatorPage() {
   const [consumer, setConsumer] = useState<ConsumerAccount>({ ...INITIAL });
+  const [referrer, setReferrer] = useState<RewardAccount>({ ...INITIAL_REFERRER });
+  const [listCreator, setListCreator] = useState<RewardAccount>({ ...INITIAL_LIST_CREATOR });
   const [l1, setL1] = useState<L1 | null>(null);
   const [lShipping, setLShipping] = useState<LShipping | null>(null);
   const [l2, setL2] = useState<L2 | null>(null);
@@ -83,6 +88,23 @@ export default function SimulatorPage() {
           cash: c.cash - Number(debit.cash) + Number(refund.cash),
           hiCoin: c.hiCoin - Number(debit.hiCoin) + Number(refund.hiCoin),
         }));
+        // Update reward accounts based on guide type and L4 state
+        const isSettled = l4 === "settled";
+        const isRefund = ["full_refund", "negotiated", "adjudicated"].includes(l4 || "");
+        if (lGuide === "referral") {
+          const rewardPerItem = 50;
+          const itemCount = l1 === "multi" ? 2 : 1;
+          if (isSettled) {
+            setReferrer((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + rewardPerItem * itemCount }));
+          }
+        }
+        if (lGuide === "list_guide") {
+          const rewardPerItem = 80;
+          const itemCount = l1 === "multi" ? 2 : 1;
+          if (isSettled) {
+            setListCreator((r) => ({ hiCoin: r.hiCoin, expectedHiCoin: r.expectedHiCoin + rewardPerItem * itemCount }));
+          }
+        }
         setResults((prev) => [{ orderNumber: data.orderNumber, details: data.details }, ...prev]);
       } else {
         setResults((prev) => [{ orderNumber: "ERROR", details: data.message }, ...prev]);
@@ -101,6 +123,8 @@ export default function SimulatorPage() {
     setResetting(true);
     await fetch("/api/simulator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "reset" }) });
     setConsumer({ ...INITIAL });
+    setReferrer({ ...INITIAL_REFERRER });
+    setListCreator({ ...INITIAL_LIST_CREATOR });
     setL1(null); setLShipping(null); setL2(null); setLGuide(null); setL3(null); setL4(null);
     setRefundAmount("");
     setResults([]);
@@ -129,14 +153,30 @@ export default function SimulatorPage() {
             <Link href="/login" className="text-sm text-gray-500 hover:text-gray-700"><ArrowLeft className="inline h-4 w-4" /> 返回</Link>
             <h1 className="text-lg font-bold">POC 場景模擬器</h1>
           </div>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-4 py-2">
-              <Wallet className="h-4 w-4 text-blue-600" />
-              <span className="text-sm">消費者</span>
-              <span className="font-mono text-sm">台幣 <strong className="text-blue-700">{consumer.cash.toLocaleString()}</strong></span>
+          <div className="flex items-center gap-3 flex-wrap justify-end">
+            {/* 消費者帳戶 */}
+            <div className="flex items-center gap-2 rounded-lg bg-blue-50 px-3 py-1.5">
+              <Wallet className="h-3.5 w-3.5 text-blue-600" />
+              <span className="text-xs">消費者</span>
+              <span className="font-mono text-xs">台幣<strong className="text-blue-700 ml-0.5">{consumer.cash.toLocaleString()}</strong></span>
               <span className="text-gray-300">|</span>
-              <Coins className="h-4 w-4 text-amber-500" />
-              <span className="font-mono text-sm">嗨幣 <strong className="text-amber-600">{consumer.hiCoin.toLocaleString()}</strong></span>
+              <span className="font-mono text-xs">嗨幣<strong className="text-amber-600 ml-0.5">{consumer.hiCoin.toLocaleString()}</strong></span>
+            </div>
+            {/* 推薦人帳戶 */}
+            <div className="flex items-center gap-2 rounded-lg bg-purple-50 px-3 py-1.5">
+              <Coins className="h-3.5 w-3.5 text-purple-600" />
+              <span className="text-xs">推薦人</span>
+              <span className="font-mono text-xs">嗨幣<strong className="text-purple-700 ml-0.5">{referrer.hiCoin}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span className="font-mono text-xs">預期<strong className="text-purple-500 ml-0.5">{referrer.expectedHiCoin}</strong></span>
+            </div>
+            {/* 導購者帳戶 */}
+            <div className="flex items-center gap-2 rounded-lg bg-teal-50 px-3 py-1.5">
+              <Coins className="h-3.5 w-3.5 text-teal-600" />
+              <span className="text-xs">導購者</span>
+              <span className="font-mono text-xs">嗨幣<strong className="text-teal-700 ml-0.5">{listCreator.hiCoin}</strong></span>
+              <span className="text-gray-300">|</span>
+              <span className="font-mono text-xs">預期<strong className="text-teal-500 ml-0.5">{listCreator.expectedHiCoin}</strong></span>
             </div>
             <button onClick={handleReset} disabled={resetting} className="flex items-center gap-1 rounded border border-red-200 px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50">
               <RotateCcw className={`h-3 w-3 ${resetting ? "animate-spin" : ""}`} /> 重置
@@ -214,12 +254,6 @@ export default function SimulatorPage() {
           {loading ? <Loader2 className="inline h-5 w-5 animate-spin" /> : "執行"}
         </button>
 
-        {/* Link to rewards simulator */}
-        <div className="text-center">
-          <a href="/simulator-rewards" className="inline-flex items-center gap-2 rounded-md border-2 border-dashed border-purple-300 px-4 py-2 text-sm text-purple-600 hover:border-purple-500 hover:text-purple-800 transition-colors">
-            🎁 導購獎勵模擬器（推薦碼 / 清單導購）
-          </a>
-        </div>
 
         {/* Results */}
         {results.length > 0 && (
