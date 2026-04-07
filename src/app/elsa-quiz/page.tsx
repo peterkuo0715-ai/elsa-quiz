@@ -293,7 +293,7 @@ export default function ElsaQuizPage() {
           <div className="space-y-3">
             {currentQuestion.options.map((opt, idx) => {
               let optionStyle =
-                "border-2 border-gray-200 bg-gray-50 hover:border-purple-300 hover:bg-purple-50";
+                "border-2 border-gray-200 bg-gray-100 text-blue-700 hover:border-purple-300 hover:bg-purple-50";
 
               if (showResult) {
                 if (idx === currentQuestion.answer) {
